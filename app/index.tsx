@@ -1,11 +1,26 @@
-import { Canvas, Group, rect, Skia } from "@shopify/react-native-skia";
+import {
+  Canvas,
+  Group,
+  matchFont,
+  PaintStyle,
+  Picture,
+  rect,
+  Skia,
+  StrokeCap,
+} from "@shopify/react-native-skia";
 import React, { useCallback, useEffect } from "react";
-import { Alert, StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import { useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BookingBlock } from "@/src/components/BookingBlock";
+import { drawBookingBlock } from "@/src/components/BookingBlock";
 import {
   getWidthByDuration,
   getXFromTime,
@@ -42,44 +57,6 @@ export default function MainScreen() {
     segmentsSV.value = segments;
     bookingsSV.value = bookings;
   }, [segments, bookings]);
-
-  const bookingPicture = useDerivedValue(() => {
-    // Инициализируем рекордер Skia
-    const recorder = Skia.PictureRecorder();
-    // Создаем холст для записи (размер равен экрану или контенту)
-    const canvas = recorder.beginRecording(
-      rect(0, 0, screenWidth * 3, screenHeight * 3),
-    );
-
-    const currentSegments = segmentsSV.value;
-    const currentBookings = bookingsSV.value;
-
-    // Настраиваем краску один раз
-    const paint = Skia.Paint();
-    paint.setAntiAlias(true);
-
-    // Проходим по массиву и пишем команды напрямую в GPU-команды
-    currentSegments.forEach((segment) => {
-      const booking = currentBookings[segment.bookingId];
-      if (!booking) return;
-
-      const x = getXFromTime(segment.startTime);
-      const y = getYFromResourceId(segment.resourceId);
-      const width = getWidthByDuration(segment.endTime - segment.startTime);
-      const height = ROW_HEIGHT - 4;
-
-      // Цвет в зависимости от статуса
-      paint.setColor(
-        Skia.Color(booking.status === "confirmed" ? "#4CAF50" : "#FFC10750"),
-      );
-
-      // Записываем команду отрисовки прямоугольника
-      canvas.drawRect(rect(x, y, width, height), paint);
-    });
-
-    // Возвращаем скомпилированную картинку
-    return recorder.finishRecordingAsPicture();
-  });
 
   const handleCellTap = useCallback(
     (tableId: string, startTime: number, canvasX: number, canvasY: number) => {
@@ -182,6 +159,76 @@ export default function MainScreen() {
     screenHeight - (HEADER_HEIGHT + insets.top + insets.bottom),
   );
 
+  const font = matchFont({
+    fontFamily: Platform.select({
+      ios: "Arial",
+      android: "sans-serif",
+      default: "System",
+    }),
+    fontSize: 13,
+    fontWeight: "bold",
+  });
+
+  const bookingPicture = useDerivedValue(() => {
+    const recorder = Skia.PictureRecorder();
+    const canvas = recorder.beginRecording(
+      rect(0, 0, screenWidth * 3, screenHeight * 3),
+    );
+
+    // Оптимизация: Создаем краски ОДИН раз за кадр, а не внутри цикла .forEach
+    const paints = {
+      rectPaint: Skia.Paint(),
+      textPaint: Skia.Paint(),
+      deleteBtnPaint: Skia.Paint(),
+      crossPaint: Skia.Paint(),
+    };
+
+    // Конфигурируем paints (антиалиасинг, цвета, strokeWidth)...
+    paints.rectPaint.setAntiAlias(true);
+    paints.textPaint.setColor(Skia.Color("#FFFFFF"));
+    paints.deleteBtnPaint.setAntiAlias(true);
+    paints.deleteBtnPaint.setColor(Skia.Color("#EF4444"));
+    paints.crossPaint.setAntiAlias(true);
+    paints.crossPaint.setColor(Skia.Color("#FFFFFF"));
+    paints.crossPaint.setStrokeWidth(2);
+    paints.crossPaint.setStyle(PaintStyle.Stroke);
+    paints.crossPaint.setStrokeCap(StrokeCap.Round);
+
+    const sx = scrollX.value;
+    const sy = scrollY.value;
+    const BUFFER = 150;
+
+    // Границы видимости
+    const viewportLeft = sx - BUFFER;
+    const viewportRight = sx + screenWidth + BUFFER;
+    const viewportTop = sy - BUFFER;
+    const viewportBottom = sy + screenHeight + BUFFER;
+
+    segmentsSV.value.forEach((segment) => {
+      const booking = bookingsSV.value[segment.bookingId];
+      if (!booking) return;
+
+      const x = getXFromTime(segment.startTime);
+      const y = getYFromResourceId(segment.resourceId) + 6;
+      const width = getWidthByDuration(segment.endTime - segment.startTime) - 4;
+      const height = ROW_HEIGHT - 12;
+
+      // Frustum Culling
+      const isVisible =
+        x + width >= viewportLeft &&
+        x <= viewportRight &&
+        y + height >= viewportTop &&
+        y <= viewportBottom;
+
+      if (isVisible) {
+        // Просто вызываем изолированную функцию отрисовки
+        drawBookingBlock(canvas, segment, booking, font, paints);
+      }
+    });
+
+    return recorder.finishRecordingAsPicture();
+  }, [screenWidth, screenHeight, font]);
+
   return (
     <View style={styles.container}>
       <GestureDetector gesture={composedGesture}>
@@ -194,18 +241,7 @@ export default function MainScreen() {
 
             <Group clip={clipBounds}>
               <Group transform={contentTransform}>
-                {segments.map((segment) => {
-                  const booking = bookings[segment.bookingId];
-                  if (!booking) return null;
-
-                  return (
-                    <BookingBlock
-                      key={segment.id}
-                      segment={segment}
-                      booking={booking}
-                    />
-                  );
-                })}
+                <Picture picture={bookingPicture} />
               </Group>
             </Group>
           </Canvas>
