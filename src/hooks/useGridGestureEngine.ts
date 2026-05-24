@@ -1,23 +1,27 @@
-import { useWindowDimensions } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import { useSharedValue, withDecay } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import {
-  HEADER_HEIGHT, // Добавили для расчета времени
+  HEADER_HEIGHT,
   HOUR_WIDTH,
   MAX_SCROLL_X,
   MAX_SCROLL_Y,
   SIDEBAR_WIDTH,
-  START_HOUR, // Добавили для расчета времени
+  START_HOUR,
 } from "../constants/grid";
+import { getResourceIdFromY, getTimeFromX } from "../utils/gridMath";
 
 interface EngineProps {
   topInset: number;
-  onCellTap: (tableId: string, startTime: number) => void;
+  onCellTap: (
+    tableId: string,
+    startTime: number,
+    canvasX: number,
+    canvasY: number,
+  ) => void;
 }
 
 export function useGridGestureEngine({ topInset, onCellTap }: EngineProps) {
-  const { width: screenWidth } = useWindowDimensions();
-
   // Функция расчета начального скролла (срабатывает один раз при инициализации хука)
   const getInitialScrollX = (): number => {
     const now = new Date();
@@ -76,7 +80,7 @@ export function useGridGestureEngine({ topInset, onCellTap }: EngineProps) {
     });
 
   // 2. ЖЕСТ ТАПА
-  const tapGesture = Gesture.Tap().onStart((event) => {
+  const tapGesture = Gesture.Tap().onEnd((event) => {
     // Исключаем клики по шапкам
     if (event.x < SIDEBAR_WIDTH || event.y < HEADER_HEIGHT + topInset) {
       return;
@@ -85,14 +89,12 @@ export function useGridGestureEngine({ topInset, onCellTap }: EngineProps) {
     // Вычисляем виртуальные координаты (теперь они корректно учитывают начальное смещение времени)
     const canvasX = event.x + scrollX.value;
     const canvasY = event.y - topInset + scrollY.value;
+    const clickedTime = getTimeFromX(canvasX);
+    const clickedTableId = getResourceIdFromY(canvasY);
 
-    console.log(canvasX, canvasY);
+    if (!clickedTableId || !clickedTime) return;
 
-    // Ваша математика тапов...
-    // const clickedTime = getTimeFromX(canvasX);
-    // const clickedTableId = getResourceIdFromY(canvasY);
-    // if (!clickedTableId || !clickedTime) return;
-    // runOnJS(onCellTap)(clickedTableId, clickedTime);
+    scheduleOnRN(onCellTap, clickedTableId, clickedTime, canvasX, canvasY);
   });
 
   const composedGesture = Gesture.Exclusive(scrollGesture, tapGesture);

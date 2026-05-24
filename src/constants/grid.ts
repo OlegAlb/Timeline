@@ -7,6 +7,9 @@ export const START_HOUR = 8;
 export const END_HOUR = 24;
 export const TOTAL_HOURS = END_HOUR - START_HOUR;
 
+export const MIN_DURATION = 60 * 60 * 1000; // 1 час
+export const MIN_GAP = 15 * 60 * 1000; // 15 минут
+
 export const TIME_STEP_MINUTES = 15;
 export const STEPS_PER_HOUR = 60 / TIME_STEP_MINUTES;
 export const TOTAL_TIME_STEPS = TOTAL_HOURS * STEPS_PER_HOUR;
