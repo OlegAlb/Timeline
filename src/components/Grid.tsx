@@ -22,6 +22,7 @@ import {
 interface GridProps {
   scrollX: SharedValue<number>;
   scrollY: SharedValue<number>;
+  scale: SharedValue<number>; // Принимаем масштаб
   topInset: number;
 }
 
@@ -30,13 +31,19 @@ const font = matchFont({
   fontSize: 12,
   fontWeight: "bold",
 });
+
 const headerFont = matchFont({
   fontFamily: "sans-serif",
   fontSize: 14,
   fontWeight: "bold",
 });
 
-export const Grid: React.FC<GridProps> = ({ scrollX, scrollY, topInset }) => {
+export const Grid: React.FC<GridProps> = ({
+  scrollX,
+  scrollY,
+  scale,
+  topInset,
+}) => {
   const { width: screenWidth } = useWindowDimensions();
 
   const hoursArray = Array.from(
@@ -91,18 +98,29 @@ export const Grid: React.FC<GridProps> = ({ scrollX, scrollY, topInset }) => {
 
   const gridTransform = useDerivedValue(() => [
     { translateY: topInset },
+    { translateX: SIDEBAR_WIDTH },
+    { translateY: HEADER_HEIGHT },
     { translateX: -scrollX.value },
     { translateY: -scrollY.value },
+    { scale: scale.value },
+    { translateX: -SIDEBAR_WIDTH },
+    { translateY: -HEADER_HEIGHT },
   ]);
 
   const sidebarTransform = useDerivedValue(() => [
     { translateY: topInset },
+    { translateY: HEADER_HEIGHT },
     { translateY: -scrollY.value },
+    { scaleY: scale.value },
+    { translateY: -HEADER_HEIGHT },
   ]);
 
   const headerTransform = useDerivedValue(() => [
     { translateY: topInset },
+    { translateX: SIDEBAR_WIDTH },
     { translateX: -scrollX.value },
+    { scaleX: scale.value },
+    { translateX: -SIDEBAR_WIDTH },
   ]);
 
   return (
@@ -133,17 +151,17 @@ export const Grid: React.FC<GridProps> = ({ scrollX, scrollY, topInset }) => {
             />
           );
         })}
-        {/* КРАСНАЯ ЛИНИЯ ТЕКУЩЕГО ВРЕМЕНИ */}
-        {/* Она находится внутри трансформируемой группы, поэтому автоматически скроллится */}
+        {/* Линия текущего времени находится внутри группы, она масштабируется автоматически */}
         <Rect
-          x={timeLineX} // Передаем SharedValue напрямую в Skia
+          x={timeLineX}
           y={HEADER_HEIGHT}
           width={2}
           height={VIRTUAL_GRID_HEIGHT}
           color="red"
         />
       </Group>
-      {/* 2. СТАТИЧНЫЙ САЙДБАР (Столы) */}
+
+      {/* 2. СТАТИЧНЫЙ САЙДБАР */}
       <Group transform={sidebarTransform}>
         <Rect
           x={0}
@@ -167,7 +185,8 @@ export const Grid: React.FC<GridProps> = ({ scrollX, scrollY, topInset }) => {
           );
         })}
       </Group>
-      {/* 3. СТАТИЧНЫЙ ХЕДЕР (Часы) */}
+
+      {/* 3. СТАТИЧНЫЙ ХЕДЕР */}
       <Group transform={headerTransform}>
         <Rect
           x={SIDEBAR_WIDTH}
@@ -190,7 +209,8 @@ export const Grid: React.FC<GridProps> = ({ scrollX, scrollY, topInset }) => {
           );
         })}
       </Group>
-      {/* Левый верхний угол (Залы) */}
+
+      {/* Левый верхний угол (Залы) - всегда статичен */}
       <Group transform={[{ translateY: topInset }]}>
         <Rect
           x={0}
@@ -207,6 +227,7 @@ export const Grid: React.FC<GridProps> = ({ scrollX, scrollY, topInset }) => {
           color={COLORS.textMain}
         />
       </Group>
+
       {topInset > 0 && (
         <Rect
           x={0}

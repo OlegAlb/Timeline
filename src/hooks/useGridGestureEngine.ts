@@ -5,14 +5,18 @@ import {
   HEADER_HEIGHT,
   HOUR_WIDTH,
   MAX_SCROLL_X,
-  MAX_SCROLL_Y,
   SIDEBAR_WIDTH,
   START_HOUR,
+  VIRTUAL_GRID_HEIGHT,
+  VIRTUAL_GRID_WIDTH,
 } from "../constants/grid";
 import { getResourceIdFromY, getTimeFromX } from "../utils/gridMath";
 
 interface EngineProps {
   topInset: number;
+  bottomInset: number;
+  screenWidth: number;
+  screenHeight: number;
   onCellTap: (
     tableId: string,
     startTime: number,
@@ -21,38 +25,38 @@ interface EngineProps {
   ) => void;
 }
 
-export function useGridGestureEngine({ topInset, onCellTap }: EngineProps) {
-  // Функция расчета начального скролла (срабатывает один раз при инициализации хука)
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 3.0;
+
+export function useGridGestureEngine({
+  topInset,
+  bottomInset,
+  screenWidth,
+  screenHeight,
+  onCellTap,
+}: EngineProps) {
   const getInitialScrollX = (): number => {
     const now = new Date();
-    // Переводим текущее время в десятичный формат (например, 14:30 -> 14.5)
     const currentDecimalHour = now.getHours() + now.getMinutes() / 60;
     const hoursPassed = currentDecimalHour - START_HOUR;
-
     if (hoursPassed <= 0) return 0;
-
-    // ВАРИАНТ А: Текущее время выравнивается по левому краю (сразу за сайдбаром)
     const targetX = hoursPassed * HOUR_WIDTH;
-
-    // ВАРИАНТ Б: Текущее время центрируется на экране (раскомментируйте, если так лучше)
-    // const visibleWidth = screenWidth - SIDEBAR_WIDTH;
-    // const targetX = (hoursPassed * HOUR_WIDTH) - (visibleWidth / 2);
-
-    // Зажимаем значение в валидных пределах сетки
     return Math.min(Math.max(0, targetX), MAX_SCROLL_X);
   };
 
-  // Инициализируем scrollX вычисленным значением вместо 0
   const scrollX = useSharedValue(getInitialScrollX());
   const scrollY = useSharedValue(0);
+
+  // Добавляем стейт для зума
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
 
   const contextX = useSharedValue(0);
   const contextY = useSharedValue(0);
 
-  // 1. ЖЕСТ СКРОЛЛА
+  // 1. ЖЕСТ СКРОЛЛА (PAN)
   const scrollGesture = Gesture.Pan()
     .onStart(() => {
-      // Благодаря этому жесты будут плавно продолжаться с текущей временной точки
       contextX.value = scrollX.value;
       contextY.value = scrollY.value;
     })
@@ -60,35 +64,99 @@ export function useGridGestureEngine({ topInset, onCellTap }: EngineProps) {
       let newX = contextX.value - event.translationX;
       let newY = contextY.value - event.translationY;
 
+      // Динамические границы скролла в зависимости от текущего масштаба
+      const maxScrollX = Math.max(
+        0,
+        VIRTUAL_GRID_WIDTH * scale.value - (screenWidth - SIDEBAR_WIDTH),
+      );
+      const maxScrollY = Math.max(
+        0,
+        VIRTUAL_GRID_HEIGHT * scale.value -
+          (screenHeight - HEADER_HEIGHT - topInset - bottomInset),
+      );
+
       if (newX < 0) newX = 0;
-      if (newX > MAX_SCROLL_X) newX = MAX_SCROLL_X;
+      if (newX > maxScrollX) newX = maxScrollX;
       if (newY < 0) newY = 0;
-      if (newY > MAX_SCROLL_Y) newY = MAX_SCROLL_Y;
+      if (newY > maxScrollY) newY = maxScrollY;
 
       scrollX.value = newX;
       scrollY.value = newY;
     })
     .onEnd((event) => {
+      const maxScrollX = Math.max(
+        0,
+        VIRTUAL_GRID_WIDTH * scale.value - (screenWidth - SIDEBAR_WIDTH),
+      );
+      const maxScrollY = Math.max(
+        0,
+        VIRTUAL_GRID_HEIGHT * scale.value -
+          (screenHeight - HEADER_HEIGHT - topInset - bottomInset),
+      );
+
       scrollX.value = withDecay({
         velocity: -event.velocityX,
-        clamp: [0, MAX_SCROLL_X],
+        clamp: [0, maxScrollX],
       });
       scrollY.value = withDecay({
         velocity: -event.velocityY,
-        clamp: [0, MAX_SCROLL_Y],
+        clamp: [0, maxScrollY],
       });
     });
 
-  // 2. ЖЕСТ ТАПА
+  // 2. ЖЕСТ ЗУМА (PINCH)
+  const pinchGesture = Gesture.Pinch()
+    .onStart(() => {
+      savedScale.value = scale.value;
+    })
+    .onUpdate((event) => {
+      const nextScale = Math.min(
+        Math.max(MIN_SCALE, savedScale.value * event.scale),
+        MAX_SCALE,
+      );
+
+      // Фокальная точка пальцев относительно рабочей области сетки
+      const fx = event.focalX - SIDEBAR_WIDTH;
+      const fy = event.focalY - (HEADER_HEIGHT + topInset);
+
+      // Корректируем скролл, чтобы точка между пальцами оставалась неподвижной при зуме
+      let newScrollX = ((fx + scrollX.value) / scale.value) * nextScale - fx;
+      let newScrollY = ((fy + scrollY.value) / scale.value) * nextScale - fy;
+
+      const maxScrollX = Math.max(
+        0,
+        VIRTUAL_GRID_WIDTH * nextScale - (screenWidth - SIDEBAR_WIDTH),
+      );
+      const maxScrollY = Math.max(
+        0,
+        VIRTUAL_GRID_HEIGHT * nextScale -
+          (screenHeight - HEADER_HEIGHT - topInset - bottomInset),
+      );
+
+      // ИСПРАВЛЕНО: Теперь проверяется правильная переменная newScrollY
+      if (newScrollX < 0) newScrollX = 0;
+      if (newScrollX > maxScrollX) newScrollX = maxScrollX;
+      if (newScrollY < 0) newScrollY = 0;
+      if (newScrollY > maxScrollY) newScrollY = maxScrollY;
+
+      scrollX.value = newScrollX;
+      scrollY.value = newScrollY;
+      scale.value = nextScale;
+    });
+
+  // 3. ЖЕСТ ТАПА (с учетом зума)
   const tapGesture = Gesture.Tap().onEnd((event) => {
-    // Исключаем клики по шапкам
     if (event.x < SIDEBAR_WIDTH || event.y < HEADER_HEIGHT + topInset) {
       return;
     }
 
-    // Вычисляем виртуальные координаты (теперь они корректно учитывают начальное смещение времени)
-    const canvasX = event.x + scrollX.value;
-    const canvasY = event.y - topInset + scrollY.value;
+    // Обратный пересчет экранных координат клика в координаты чистого холста (canvas)
+    const canvasX =
+      (event.x - SIDEBAR_WIDTH + scrollX.value) / scale.value + SIDEBAR_WIDTH;
+    const canvasY =
+      (event.y - topInset - HEADER_HEIGHT + scrollY.value) / scale.value +
+      HEADER_HEIGHT;
+
     const clickedTime = getTimeFromX(canvasX);
     const clickedTableId = getResourceIdFromY(canvasY);
 
@@ -97,11 +165,16 @@ export function useGridGestureEngine({ topInset, onCellTap }: EngineProps) {
     scheduleOnRN(onCellTap, clickedTableId, clickedTime, canvasX, canvasY);
   });
 
-  const composedGesture = Gesture.Exclusive(scrollGesture, tapGesture);
+  // Объединяем жесты через Simultaneous, чтобы можно было одновременно скроллить и зумить
+  const composedGesture = Gesture.Simultaneous(
+    Gesture.Exclusive(scrollGesture, tapGesture),
+    pinchGesture,
+  );
 
   return {
     scrollX,
     scrollY,
+    scale,
     composedGesture,
   };
 }

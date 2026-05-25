@@ -42,7 +42,6 @@ export default function MainScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
-  // Достаем данные из Zustand
   const segments = useBookingStore((state) => state.segments);
   const bookings = useBookingStore((state) => state.bookings);
   const addBookingWithSegments = useBookingStore(
@@ -141,15 +140,23 @@ export default function MainScreen() {
   );
 
   // Инициализируем движок, передавая topInset и изолированный коллбэк
-  const { scrollX, scrollY, composedGesture } = useGridGestureEngine({
+  const { scrollX, scrollY, scale, composedGesture } = useGridGestureEngine({
     topInset: insets.top,
+    bottomInset: insets.bottom,
+    screenWidth,
+    screenHeight,
     onCellTap: handleCellTap,
   });
 
   const contentTransform = useDerivedValue(() => [
     { translateY: insets.top },
+    { translateX: SIDEBAR_WIDTH },
+    { translateY: HEADER_HEIGHT },
     { translateX: -scrollX.value },
     { translateY: -scrollY.value },
+    { scale: scale.value },
+    { translateX: -SIDEBAR_WIDTH },
+    { translateY: -HEADER_HEIGHT },
   ]);
 
   const clipBounds = rect(
@@ -172,10 +179,9 @@ export default function MainScreen() {
   const bookingPicture = useDerivedValue(() => {
     const recorder = Skia.PictureRecorder();
     const canvas = recorder.beginRecording(
-      rect(0, 0, screenWidth * 3, screenHeight * 3),
+      rect(0, 0, screenWidth * 4, screenHeight * 4),
     );
 
-    // Оптимизация: Создаем краски ОДИН раз за кадр, а не внутри цикла .forEach
     const paints = {
       rectPaint: Skia.Paint(),
       textPaint: Skia.Paint(),
@@ -194,15 +200,20 @@ export default function MainScreen() {
     paints.crossPaint.setStyle(PaintStyle.Stroke);
     paints.crossPaint.setStrokeCap(StrokeCap.Round);
 
+    const sc = scale.value;
     const sx = scrollX.value;
     const sy = scrollY.value;
-    const BUFFER = 150;
+    const BUFFER = 150 / sc; // Масштабируем буфер отсечения
+
+    const visibleWidth = screenWidth - SIDEBAR_WIDTH;
+    const visibleHeight =
+      screenHeight - HEADER_HEIGHT - insets.top - insets.bottom;
 
     // Границы видимости
-    const viewportLeft = sx - BUFFER;
-    const viewportRight = sx + screenWidth + BUFFER;
-    const viewportTop = sy - BUFFER;
-    const viewportBottom = sy + screenHeight + BUFFER;
+    const viewportLeft = SIDEBAR_WIDTH + (sx - BUFFER) / sc;
+    const viewportRight = SIDEBAR_WIDTH + (sx + visibleWidth + BUFFER) / sc;
+    const viewportTop = HEADER_HEIGHT + (sy - BUFFER) / sc;
+    const viewportBottom = HEADER_HEIGHT + (sy + visibleHeight + BUFFER) / sc;
 
     segmentsSV.value.forEach((segment) => {
       const booking = bookingsSV.value[segment.bookingId];
@@ -213,7 +224,6 @@ export default function MainScreen() {
       const width = getWidthByDuration(segment.endTime - segment.startTime) - 4;
       const height = ROW_HEIGHT - 12;
 
-      // Frustum Culling
       const isVisible =
         x + width >= viewportLeft &&
         x <= viewportRight &&
@@ -221,7 +231,6 @@ export default function MainScreen() {
         y <= viewportBottom;
 
       if (isVisible) {
-        // Просто вызываем изолированную функцию отрисовки
         drawBookingBlock(canvas, segment, booking, font, paints);
       }
     });
@@ -237,7 +246,13 @@ export default function MainScreen() {
           collapsable={false}
         >
           <Canvas style={styles.canvas}>
-            <Grid scrollX={scrollX} scrollY={scrollY} topInset={insets.top} />
+            {/* Передаем scale внутрь сетки */}
+            <Grid
+              scrollX={scrollX}
+              scrollY={scrollY}
+              scale={scale}
+              topInset={insets.top}
+            />
 
             <Group clip={clipBounds}>
               <Group transform={contentTransform}>
