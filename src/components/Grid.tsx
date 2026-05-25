@@ -22,7 +22,7 @@ import {
 interface GridProps {
   scrollX: SharedValue<number>;
   scrollY: SharedValue<number>;
-  scale: SharedValue<number>; // Принимаем масштаб
+  scale: SharedValue<number>;
   topInset: number;
 }
 
@@ -38,6 +38,67 @@ const headerFont = matchFont({
   fontWeight: "bold",
 });
 
+// --- ВЫДЕЛЕННЫЙ КОМПОНЕНТ ДЛЯ ТЕКСТА В САЙДБАРЕ ---
+interface TableTextProps {
+  tableNum: number;
+  index: number;
+  scale: SharedValue<number>;
+}
+
+const TableText: React.FC<TableTextProps> = ({ tableNum, index, scale }) => {
+  const yPosition = HEADER_HEIGHT + index * ROW_HEIGHT + ROW_HEIGHT / 2 + 4;
+
+  // Теперь мы легально создаем DerivedValue для ВСЕГО массива трансформаций целиком
+  const transform = useDerivedValue(() => [
+    { translateY: yPosition },
+    { scaleY: 1 / scale.value }, // Внутри ворклета scale.value возвращает чистый number
+    { translateY: -yPosition },
+  ]);
+
+  return (
+    <Group transform={transform}>
+      <Text
+        x={15}
+        y={yPosition}
+        text={`Стол №${tableNum}`}
+        font={font}
+        color={COLORS.textMain}
+      />
+    </Group>
+  );
+};
+
+// --- ВЫДЕЛЕННЫЙ КОМПОНЕНТ ДЛЯ ТЕКСТА В ХЕДЕРЕ ---
+interface HourTextProps {
+  hour: number;
+  index: number;
+  scale: SharedValue<number>;
+}
+
+const HourText: React.FC<HourTextProps> = ({ hour, index, scale }) => {
+  const xPosition = SIDEBAR_WIDTH + index * HOUR_WIDTH + 15;
+
+  // Создаем DerivedValue для ВСЕГО массива трансформаций хедера
+  const transform = useDerivedValue(() => [
+    { translateX: xPosition },
+    { scaleX: 1 / scale.value }, // Внутри ворклета scale.value возвращает чистый number
+    { translateX: -xPosition },
+  ]);
+
+  return (
+    <Group transform={transform}>
+      <Text
+        x={xPosition}
+        y={HEADER_HEIGHT / 2 + 6}
+        text={`${hour}:00`}
+        font={headerFont}
+        color={COLORS.textMuted}
+      />
+    </Group>
+  );
+};
+
+// --- ОСНОВНОЙ КОМПОНЕНТ ГРИДА ---
 export const Grid: React.FC<GridProps> = ({
   scrollX,
   scrollY,
@@ -52,13 +113,11 @@ export const Grid: React.FC<GridProps> = ({
   );
   const tablesArray = Array.from({ length: TOTAL_TABLES }, (_, i) => i + 1);
 
-  // Функция для расчета точной координаты X на основе текущего времени
   const calculateLineX = (): number => {
     const now = new Date();
     const currentDecimalHour = now.getHours() + now.getMinutes() / 60;
     const hoursPassed = currentDecimalHour - START_HOUR;
 
-    // Если текущее время вне рабочего диапазона сетки, уводим линию за экран
     if (hoursPassed < 0 || hoursPassed > TOTAL_HOURS) {
       return -1000;
     }
@@ -66,30 +125,24 @@ export const Grid: React.FC<GridProps> = ({
     return SIDEBAR_WIDTH + hoursPassed * HOUR_WIDTH;
   };
 
-  // Создаем reanimated-переменную со стартовой позицией линии
   const timeLineX = useSharedValue(calculateLineX());
 
   useEffect(() => {
     const updatePosition = () => {
-      timeLineX.value = calculateLineX(); // Обновление значения напрямую в UI-потоке
+      timeLineX.value = calculateLineX();
     };
 
-    // 1. Вычисляем, сколько миллисекунд осталось до начала СЛЕДУЮЩЕЙ минуты
     const now = new Date();
     const msToNextMinute =
       60000 - (now.getSeconds() * 1000 + now.getMilliseconds());
 
     let intervalId: number;
 
-    // 2. Ждем наступления ровной минуты
     const timeoutId = setTimeout(() => {
-      updatePosition(); // Смещаем линию ровно на переломе минуты
-
-      // 3. Запускаем интервал строго раз в 60 секунд
+      updatePosition();
       intervalId = setInterval(updatePosition, 60000);
     }, msToNextMinute);
 
-    // Очищаем таймеры при размонтировании компонента, чтобы избежать утечек памяти
     return () => {
       clearTimeout(timeoutId);
       if (intervalId) clearInterval(intervalId);
@@ -151,7 +204,6 @@ export const Grid: React.FC<GridProps> = ({
             />
           );
         })}
-        {/* Линия текущего времени находится внутри группы, она масштабируется автоматически */}
         <Rect
           x={timeLineX}
           y={HEADER_HEIGHT}
@@ -170,20 +222,14 @@ export const Grid: React.FC<GridProps> = ({
           height={VIRTUAL_GRID_HEIGHT}
           color={COLORS.bgSurface}
         />
-        {tablesArray.map((tableNum, index) => {
-          const yPosition =
-            HEADER_HEIGHT + index * ROW_HEIGHT + ROW_HEIGHT / 2 + 4;
-          return (
-            <Text
-              key={`table-text-${index}`}
-              x={15}
-              y={yPosition}
-              text={`Стол №${tableNum}`}
-              font={font}
-              color={COLORS.textMain}
-            />
-          );
-        })}
+        {tablesArray.map((tableNum, index) => (
+          <TableText
+            key={`table-text-${index}`}
+            tableNum={tableNum}
+            index={index}
+            scale={scale}
+          />
+        ))}
       </Group>
 
       {/* 3. СТАТИЧНЫЙ ХЕДЕР */}
@@ -195,22 +241,17 @@ export const Grid: React.FC<GridProps> = ({
           height={HEADER_HEIGHT}
           color={COLORS.bgSurface}
         />
-        {hoursArray.map((hour, index) => {
-          const xPosition = SIDEBAR_WIDTH + index * HOUR_WIDTH + 15;
-          return (
-            <Text
-              key={`hour-text-${index}`}
-              x={xPosition}
-              y={HEADER_HEIGHT / 2 + 6}
-              text={`${hour}:00`}
-              font={headerFont}
-              color={COLORS.textMuted}
-            />
-          );
-        })}
+        {hoursArray.map((hour, index) => (
+          <HourText
+            key={`hour-text-${index}`}
+            hour={hour}
+            index={index}
+            scale={scale}
+          />
+        ))}
       </Group>
 
-      {/* Левый верхний угол (Залы) - всегда статичен */}
+      {/* Левый верхний угол (Залы) */}
       <Group transform={[{ translateY: topInset }]}>
         <Rect
           x={0}
