@@ -2,13 +2,13 @@ import {
   END_HOUR,
   HEADER_HEIGHT,
   HOUR_WIDTH,
+  MAX_SCROLL_X,
   MIN_DURATION,
   MIN_GAP,
   ROW_HEIGHT,
   SIDEBAR_WIDTH,
   START_HOUR,
   TIME_STEP_MINUTES,
-  TOTAL_HOURS,
 } from "../constants/grid";
 
 interface Segment {
@@ -83,29 +83,15 @@ export const getYFromResourceId = (resourceId: string): number => {
   return HEADER_HEIGHT + tableIndex * ROW_HEIGHT;
 };
 
-export const getInitialScrollX = (screenWidth: number): number => {
+export const getInitialScrollX = (): number => {
+  "worklet";
+
   const now = new Date();
-
-  // Получаем текущее время в десятичном формате (например, 14:30 -> 14.5)
   const currentDecimalHour = now.getHours() + now.getMinutes() / 60;
-
-  // Сколько часов прошло с момента старта сетки
   const hoursPassed = currentDecimalHour - START_HOUR;
-
-  // Если текущее время раньше, чем начало сетки — остаёмся в начале (0)
   if (hoursPassed <= 0) return 0;
-
-  // Если текущее время позже, чем конец сетки — мотаем до упора
-  if (hoursPassed >= TOTAL_HOURS) {
-    return TOTAL_HOURS * HOUR_WIDTH;
-  }
-
-  // Базовый сдвиг: текущее время встанет ровно к левому краю (у сайдбара)
   const targetX = hoursPassed * HOUR_WIDTH;
-
-  const availableWidth = screenWidth - SIDEBAR_WIDTH;
-
-  return Math.max(0, targetX - availableWidth / 2);
+  return Math.min(Math.max(0, targetX), MAX_SCROLL_X);
 };
 
 export const getWidthByDuration = (

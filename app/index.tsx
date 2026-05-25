@@ -5,10 +5,12 @@ import {
   PaintStyle,
   Picture,
   rect,
+  RoundedRect,
   Skia,
   StrokeCap,
+  Text,
 } from "@shopify/react-native-skia";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Platform,
@@ -22,6 +24,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { drawBookingBlock } from "@/src/components/BookingBlock";
 import {
+  getResourceIdFromY,
+  getTimeFromX,
   getWidthByDuration,
   getXFromTime,
   getYFromResourceId,
@@ -34,6 +38,8 @@ import {
   MIN_DURATION,
   ROW_HEIGHT,
   SIDEBAR_WIDTH,
+  VIRTUAL_GRID_HEIGHT, // Не забудь экспортировать/импортировать эти константы
+  VIRTUAL_GRID_WIDTH,
 } from "../src/constants/grid";
 import { useGridGestureEngine } from "../src/hooks/useGridGestureEngine";
 import { useBookingStore } from "../src/store/useBookingStore";
@@ -48,18 +54,77 @@ export default function MainScreen() {
     (state) => state.addBookingWithSegments,
   );
   const deleteBooking = useBookingStore((state) => state.deleteBooking);
+  const updateSegment = useBookingStore((state) => state.updateSegment);
+
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [draggedWidthState, setDraggedWidthState] = useState(0);
 
   const segmentsSV = useSharedValue(segments);
-  const bookingsSV = useSharedValue(bookings);
-
   useEffect(() => {
     segmentsSV.value = segments;
-    bookingsSV.value = bookings;
-  }, [segments, bookings]);
+  }, [segments]);
+
+  const handleDragStart = useCallback((id: string, width: number) => {
+    setDraggedId(id);
+    setDraggedWidthState(width);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (id: string, finalCanvasX: number, finalCanvasY: number) => {
+      setDraggedId(null); // Возвращаем видимость в основной снимок
+
+      // 1. Пересчитываем координаты холста обратно в понятные сетке сущности
+      // Берем центр строки (финальный Y + половина высоты строки), чтобы точнее попадать в нужный стол
+      const targetTableId = getResourceIdFromY(
+        finalCanvasY + (ROW_HEIGHT - 12) / 2,
+      );
+      const targetStartTime = getTimeFromX(finalCanvasX);
+
+      if (!targetTableId || !targetStartTime) return;
+
+      // 2. Ищем оригинальный сегмент для расчета его длительности
+      const originalSegment = segments.find((s) => s.id === id);
+      if (!originalSegment) return;
+
+      const duration = originalSegment.endTime - originalSegment.startTime;
+      const targetEndTime = targetStartTime + duration;
+
+      // 3. ВАЖНО: Валидируем слот. Передаем ВСЕ сегменты, КРОМЕ текущего перемещаемого,
+      // иначе он будет пересекаться сам с собой в своей старой точке!
+      const otherSegments = segments.filter((s) => s.id !== id);
+      const validation = validateBookingSlot(
+        targetTableId,
+        targetStartTime,
+        otherSegments,
+      );
+
+      if (!validation.isValid) {
+        Alert.alert("Ошибка перемещения", validation.error || "Слот занят");
+      } else {
+        // 4. Если всё ок — обновляем стор
+        updateSegment(id, targetTableId, targetStartTime, targetEndTime);
+      }
+    },
+    [segments, updateSegment],
+  );
+
+  // Стабилизируем шрифт, чтобы он не пересоздавался при каждом рендере
+  const font = useMemo(
+    () =>
+      matchFont({
+        fontFamily: Platform.select({
+          ios: "Arial",
+          android: "sans-serif",
+          default: "System",
+        }),
+        fontSize: 13,
+        fontWeight: "bold",
+      }),
+    [],
+  );
 
   const handleCellTap = useCallback(
     (tableId: string, startTime: number, canvasX: number, canvasY: number) => {
-      // 1. Ищем сегмент, по которому кликнули
       const clickedSegment = segments.find(
         (seg) =>
           seg.resourceId === tableId &&
@@ -67,9 +132,7 @@ export default function MainScreen() {
           startTime < seg.endTime,
       );
 
-      // 2. Если сегмент найден — проверяем, попали ли в кнопку удаления
       if (clickedSegment) {
-        // Воспроизводим геометрию блока для расчета положения кнопки
         const x = getXFromTime(clickedSegment.startTime);
         const width = getWidthByDuration(
           clickedSegment.endTime - clickedSegment.startTime,
@@ -79,14 +142,12 @@ export default function MainScreen() {
 
         const buttonX = x + width - 22;
         const buttonY = y + height / 2;
-        const buttonRadius = 12; // Даем радиус чуть больше (12 вместо 10) для облегчения тапа пальцем
+        const buttonRadius = 12;
 
-        // Считаем расстояние от точки клика до центра кнопки по формуле гипотенузы
         const dx = canvasX - buttonX;
         const dy = canvasY - buttonY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        // Если кликнули в область кнопки удаления (+ небольшой зазор на погрешность пальца)
         if (distance <= buttonRadius + 4) {
           Alert.alert(
             "Удалить бронирование?",
@@ -100,16 +161,14 @@ export default function MainScreen() {
               },
             ],
           );
-          return; // Завершаем выполнение, чтобы не открывать карточку редактирования
+          return;
         }
 
-        // 3. Если в кнопку не попали — это обычный клик по телу брони (например, просмотр/редактирование)
         const targetBooking = bookings[clickedSegment.bookingId];
         Alert.alert("Инфо", `Просмотр брони: ${targetBooking?.customerName}`);
         return;
       }
 
-      // 4. Логика создания НОВОЙ брони (если кликнули на пустую ячейку)
       const bookingId = `booking_${Date.now()}`;
       const segmentId = `seg_${Date.now()}`;
       const endTime = startTime + MIN_DURATION;
@@ -139,14 +198,28 @@ export default function MainScreen() {
     [segments, bookings, deleteBooking, addBookingWithSegments],
   );
 
-  // Инициализируем движок, передавая topInset и изолированный коллбэк
-  const { scrollX, scrollY, scale, composedGesture } = useGridGestureEngine({
-    topInset: insets.top,
-    bottomInset: insets.bottom,
-    screenWidth,
-    screenHeight,
-    onCellTap: handleCellTap,
-  });
+  const { scrollX, scrollY, scale, draggedX, draggedY, composedGesture } =
+    useGridGestureEngine({
+      topInset: insets.top,
+      bottomInset: insets.bottom,
+      screenWidth,
+      screenHeight,
+      segmentsSV,
+      onCellTap: handleCellTap,
+      onDragStart: handleDragStart,
+      onDragEnd: handleDragEnd,
+    });
+
+  const dragBlockTransform = useDerivedValue(() => [
+    { translateX: draggedX.value },
+    { translateY: draggedY.value },
+  ]);
+
+  const draggedBookingName = useMemo(() => {
+    if (!draggedId) return "";
+    const seg = segments.find((s) => s.id === draggedId);
+    return bookings[seg?.bookingId || ""]?.customerName || "Перенос...";
+  }, [draggedId, segments, bookings]);
 
   const contentTransform = useDerivedValue(() => [
     { translateY: insets.top },
@@ -166,20 +239,17 @@ export default function MainScreen() {
     screenHeight - (HEADER_HEIGHT + insets.top + insets.bottom),
   );
 
-  const font = matchFont({
-    fontFamily: Platform.select({
-      ios: "Arial",
-      android: "sans-serif",
-      default: "System",
-    }),
-    fontSize: 13,
-    fontWeight: "bold",
-  });
-
-  const bookingPicture = useDerivedValue(() => {
+  // Чистый React useMemo: перерисовывает Picture ТОЛЬКО при изменении данных в Zustand
+  const bookingPicture = useMemo(() => {
     const recorder = Skia.PictureRecorder();
+    // Создаем холст под размеры всей виртуальной сетки
     const canvas = recorder.beginRecording(
-      rect(0, 0, screenWidth * 4, screenHeight * 4),
+      rect(
+        0,
+        0,
+        SIDEBAR_WIDTH + VIRTUAL_GRID_WIDTH,
+        HEADER_HEIGHT + VIRTUAL_GRID_HEIGHT,
+      ),
     );
 
     const paints = {
@@ -189,7 +259,6 @@ export default function MainScreen() {
       crossPaint: Skia.Paint(),
     };
 
-    // Конфигурируем paints (антиалиасинг, цвета, strokeWidth)...
     paints.rectPaint.setAntiAlias(true);
     paints.textPaint.setColor(Skia.Color("#FFFFFF"));
     paints.deleteBtnPaint.setAntiAlias(true);
@@ -200,23 +269,10 @@ export default function MainScreen() {
     paints.crossPaint.setStyle(PaintStyle.Stroke);
     paints.crossPaint.setStrokeCap(StrokeCap.Round);
 
-    const sc = scale.value;
-    const sx = scrollX.value;
-    const sy = scrollY.value;
-    const BUFFER = 150 / sc; // Масштабируем буфер отсечения
+    segments.forEach((segment) => {
+      if (segment.id === draggedId) return; // ПРОПУСКАЕМ перемещаемый элемент!
 
-    const visibleWidth = screenWidth - SIDEBAR_WIDTH;
-    const visibleHeight =
-      screenHeight - HEADER_HEIGHT - insets.top - insets.bottom;
-
-    // Границы видимости
-    const viewportLeft = SIDEBAR_WIDTH + (sx - BUFFER) / sc;
-    const viewportRight = SIDEBAR_WIDTH + (sx + visibleWidth + BUFFER) / sc;
-    const viewportTop = HEADER_HEIGHT + (sy - BUFFER) / sc;
-    const viewportBottom = HEADER_HEIGHT + (sy + visibleHeight + BUFFER) / sc;
-
-    segmentsSV.value.forEach((segment) => {
-      const booking = bookingsSV.value[segment.bookingId];
+      const booking = bookings[segment.bookingId];
       if (!booking) return;
 
       const x = getXFromTime(segment.startTime);
@@ -224,19 +280,13 @@ export default function MainScreen() {
       const width = getWidthByDuration(segment.endTime - segment.startTime) - 4;
       const height = ROW_HEIGHT - 12;
 
-      const isVisible =
-        x + width >= viewportLeft &&
-        x <= viewportRight &&
-        y + height >= viewportTop &&
-        y <= viewportBottom;
-
-      if (isVisible) {
-        drawBookingBlock(canvas, segment, booking, font, paints);
-      }
+      // Твое ручное отсечение (viewport Left/Right/Top/Bottom)...
+      // if (isVisible) drawBookingBlock(canvas, segment, booking, font, paints);
+      drawBookingBlock(canvas, segment, booking, font, paints);
     });
 
     return recorder.finishRecordingAsPicture();
-  }, [screenWidth, screenHeight, font]);
+  }, [segments, bookings, font, draggedId, screenWidth, screenHeight]);
 
   return (
     <View style={styles.container}>
@@ -246,17 +296,38 @@ export default function MainScreen() {
           collapsable={false}
         >
           <Canvas style={styles.canvas}>
-            {/* Передаем scale внутрь сетки */}
             <Grid
               scrollX={scrollX}
               scrollY={scrollY}
               scale={scale}
               topInset={insets.top}
             />
-
             <Group clip={clipBounds}>
               <Group transform={contentTransform}>
+                {/* Наша закэшированная картинка без перетаскиваемого блока */}
                 <Picture picture={bookingPicture} />
+
+                {/* Рендерим плавающий блок, только если идет процесс перетаскивания */}
+                {draggedId !== null && (
+                  <Group transform={dragBlockTransform}>
+                    <RoundedRect
+                      x={0}
+                      y={0}
+                      r={8}
+                      width={draggedWidthState}
+                      height={ROW_HEIGHT - 12}
+                      color="#3B82F6" // Приятный синий цвет для активного Drag'а
+                      opacity={0.8} // Делаем полупрозрачным, чтобы видеть сетку под ним
+                    />
+                    <Text
+                      x={10}
+                      y={(ROW_HEIGHT - 12) / 2 + 4}
+                      text={draggedBookingName}
+                      font={font}
+                      color="#FFFFFF"
+                    />
+                  </Group>
+                )}
               </Group>
             </Group>
           </Canvas>

@@ -1,28 +1,41 @@
 import { Gesture } from "react-native-gesture-handler";
-import { useSharedValue, withDecay } from "react-native-reanimated";
+import {
+  SharedValue,
+  useSharedValue,
+  withDecay,
+} from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import {
   HEADER_HEIGHT,
-  HOUR_WIDTH,
-  MAX_SCROLL_X,
+  ROW_HEIGHT,
   SIDEBAR_WIDTH,
-  START_HOUR,
   VIRTUAL_GRID_HEIGHT,
   VIRTUAL_GRID_WIDTH,
 } from "../constants/grid";
-import { getResourceIdFromY, getTimeFromX } from "../utils/gridMath";
+import {
+  getInitialScrollX,
+  getResourceIdFromY,
+  getTimeFromX,
+  getWidthByDuration,
+  getXFromTime,
+  getYFromResourceId,
+} from "../utils/gridMath";
 
 interface EngineProps {
   topInset: number;
   bottomInset: number;
   screenWidth: number;
   screenHeight: number;
+  segmentsSV: SharedValue<any[]>; // Передаем SharedValue сегментов для UI-потока
   onCellTap: (
     tableId: string,
     startTime: number,
     canvasX: number,
     canvasY: number,
   ) => void;
+  // Новые коллбэки для перетаскивания:
+  onDragStart: (id: string, width: number) => void;
+  onDragEnd: (id: string, finalX: number, finalY: number) => void;
 }
 
 const MIN_SCALE = 0.5;
@@ -33,17 +46,11 @@ export function useGridGestureEngine({
   bottomInset,
   screenWidth,
   screenHeight,
+  segmentsSV,
   onCellTap,
+  onDragStart,
+  onDragEnd,
 }: EngineProps) {
-  const getInitialScrollX = (): number => {
-    const now = new Date();
-    const currentDecimalHour = now.getHours() + now.getMinutes() / 60;
-    const hoursPassed = currentDecimalHour - START_HOUR;
-    if (hoursPassed <= 0) return 0;
-    const targetX = hoursPassed * HOUR_WIDTH;
-    return Math.min(Math.max(0, targetX), MAX_SCROLL_X);
-  };
-
   const scrollX = useSharedValue(getInitialScrollX());
   const scrollY = useSharedValue(0);
 
@@ -53,6 +60,87 @@ export function useGridGestureEngine({
 
   const contextX = useSharedValue(0);
   const contextY = useSharedValue(0);
+
+  const draggedSegmentId = useSharedValue<string | null>(null);
+  const draggedX = useSharedValue(0);
+  const draggedY = useSharedValue(0);
+  const dragOffsetX = useSharedValue(0);
+  const dragOffsetY = useSharedValue(0);
+
+  const dragGesture = Gesture.Pan()
+    .activateAfterLongPress(400) // 400мс удержания активируют режим drag-and-drop
+    .onStart((event) => {
+      // Переводим начальную точку касания экрана в координаты холста canvas
+      const canvasX =
+        (event.x - SIDEBAR_WIDTH + scrollX.value) / scale.value + SIDEBAR_WIDTH;
+      const canvasY =
+        (event.y - topInset - HEADER_HEIGHT + scrollY.value) / scale.value +
+        HEADER_HEIGHT;
+
+      // Хит-тест: ищем, на какой сегмент наступили (прямо на UI-потоке)
+      const segments = segmentsSV.value;
+      let foundSeg = null;
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const x = getXFromTime(seg.startTime);
+        const y = getYFromResourceId(seg.resourceId) + 6;
+        const width = getWidthByDuration(seg.endTime - seg.startTime) - 4;
+        const height = ROW_HEIGHT - 12;
+
+        if (
+          canvasX >= x &&
+          canvasX <= x + width &&
+          canvasY >= y &&
+          canvasY <= y + height
+        ) {
+          foundSeg = seg;
+          break;
+        }
+      }
+
+      if (foundSeg) {
+        draggedSegmentId.value = foundSeg.id;
+        const width =
+          getWidthByDuration(foundSeg.endTime - foundSeg.startTime) - 4;
+
+        // Сообщаем JS-потоку скрыть этот блок из основного useMemo снимка
+        scheduleOnRN(onDragStart, foundSeg.id, width);
+
+        // Запоминаем дельту (где именно внутри блока палец коснулся)
+        dragOffsetX.value = canvasX - getXFromTime(foundSeg.startTime);
+        dragOffsetY.value =
+          canvasY - (getYFromResourceId(foundSeg.resourceId) + 6);
+
+        draggedX.value = canvasX - dragOffsetX.value;
+        draggedY.value = canvasY - dragOffsetY.value;
+      }
+    })
+    .onUpdate((event) => {
+      if (!draggedSegmentId.value) return;
+
+      const canvasX =
+        (event.x - SIDEBAR_WIDTH + scrollX.value) / scale.value + SIDEBAR_WIDTH;
+      const canvasY =
+        (event.y - topInset - HEADER_HEIGHT + scrollY.value) / scale.value +
+        HEADER_HEIGHT;
+
+      // Плавно двигаем блок за пальцем
+      draggedX.value = canvasX - dragOffsetX.value;
+      draggedY.value = canvasY - dragOffsetY.value;
+    })
+    .onEnd(() => {
+      if (!draggedSegmentId.value) return;
+
+      // Передаем финальные координаты на JS-поток для валидации и сохранения
+      scheduleOnRN(
+        onDragEnd,
+        draggedSegmentId.value,
+        draggedX.value,
+        draggedY.value,
+      );
+      draggedSegmentId.value = null;
+    });
 
   // 1. ЖЕСТ СКРОЛЛА (PAN)
   const scrollGesture = Gesture.Pan()
@@ -167,7 +255,7 @@ export function useGridGestureEngine({
 
   // Объединяем жесты через Simultaneous, чтобы можно было одновременно скроллить и зумить
   const composedGesture = Gesture.Simultaneous(
-    Gesture.Exclusive(scrollGesture, tapGesture),
+    Gesture.Exclusive(dragGesture, scrollGesture, tapGesture),
     pinchGesture,
   );
 
@@ -175,6 +263,9 @@ export function useGridGestureEngine({
     scrollX,
     scrollY,
     scale,
+    draggedX,
+    draggedY,
+    draggedSegmentId,
     composedGesture,
   };
 }
