@@ -41,7 +41,6 @@ export const getTimeFromX = (
   const hoursFromStart = relativeX / HOUR_WIDTH;
   const totalMinutes = hoursFromStart * 60;
 
-  // Округление (Snapping) до шага сетки (например, 15 минут)
   const snappedMinutes =
     Math.round(totalMinutes / TIME_STEP_MINUTES) * TIME_STEP_MINUTES;
 
@@ -150,7 +149,6 @@ export function findSegmentAtCoords(
     const seg = segments[i];
     if (!seg.resourceId) continue;
 
-    // В будущем парсинг строки лучше заменить на числовое поле rowIndex прямо в объекте
     const tableIndex = parseInt(seg.resourceId.replace("table_", ""), 10) - 1;
     if (isNaN(tableIndex)) continue;
 
@@ -158,7 +156,6 @@ export function findSegmentAtCoords(
     const segY = getYFromRowIndex(tableIndex);
     const segW = getWidthByDuration(seg.endTime - seg.startTime);
 
-    // Проверяем, попала ли точка внутрь прямоугольника плашки бронирования
     if (
       canvasX >= segX &&
       canvasX <= segX + segW &&
@@ -184,7 +181,6 @@ export function calculateMaxEndTime(
 ): number {
   "worklet";
 
-  // Базовое ограничение по умолчанию — конец рабочего дня на сетке
   const dayEndMs = baseDayStartMs + endHour * 60 * 60 * 1000;
   let maxEndTime = dayEndMs;
 

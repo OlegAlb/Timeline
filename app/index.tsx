@@ -34,7 +34,7 @@ import {
   MIN_DURATION,
   MIN_GAP,
   SIDEBAR_WIDTH,
-  VIRTUAL_GRID_HEIGHT, // Не забудь экспортировать/импортировать эти константы
+  VIRTUAL_GRID_HEIGHT,
   VIRTUAL_GRID_WIDTH,
 } from "../src/constants/grid";
 import { useGridGestureEngine } from "../src/hooks/useGridGestureEngine";
@@ -119,11 +119,9 @@ export default function MainScreen() {
       controlPaint: Skia.Paint(),
     };
 
-    // Настраиваем кисть для фона бронирования
     paints.rectPaint.setAntiAlias(true);
-    paints.rectPaint.setColor(Skia.Color(COLORS.booking)); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+    paints.rectPaint.setColor(Skia.Color(COLORS.booking));
 
-    // Настраиваем остальные кисти
     paints.textPaint.setColor(Skia.Color(COLORS.textMain));
     paints.controlPaint.setColor(Skia.Color(COLORS.textMain));
 

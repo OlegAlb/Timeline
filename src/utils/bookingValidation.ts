@@ -15,12 +15,12 @@ export const validateBookingSlot = (
 ): ValidationResult => {
   const endTime = customEndTime ?? startTime + MIN_DURATION;
 
-  // 1. Проверка на прошлое время
+  // Проверка на прошлое время
   if (startTime < nowTimestamp) {
     return { isValid: false, error: "Нельзя забронировать прошедшее время" };
   }
 
-  // 2. Проверка на рабочие часы (избегаем мутаций дат, работаем через границы дня)
+  // Проверка на рабочие часы
   const baseDay = new Date(startTime);
   const workStart = new Date(baseDay).setHours(START_HOUR, 0, 0, 0);
   const workEnd = new Date(baseDay).setHours(END_HOUR, 0, 0, 0);
@@ -32,7 +32,7 @@ export const validateBookingSlot = (
     };
   }
 
-  // 3. Проверка пересечений с учетом буферной зоны (Collision Detection)
+  // Проверка пересечений с учетом буферной зоны (Collision Detection)
   const tableSegments = existingSegments.filter(
     (seg) => seg.resourceId === targetResourceId,
   );

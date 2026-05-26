@@ -41,7 +41,6 @@ export function useGridDragGesture({
   const dragGesture = Gesture.Pan()
     .activateAfterLongPress(400)
     .onStart((event) => {
-      // Переводим начальную точку касания экрана в координаты холста canvas
       const { canvasX, canvasY } = getCanvasCoords(
         event.x,
         event.y,
@@ -95,14 +94,12 @@ export function useGridDragGesture({
         HEADER_HEIGHT,
       );
 
-      // Плавно двигаем блок за пальцем
       draggedX.value = canvasX - dragOffsetX.value;
       draggedY.value = canvasY - dragOffsetY.value;
     })
     .onEnd(() => {
       if (!draggedSegmentId.value) return;
 
-      // Передаем финальные координаты на JS-поток для валидации и сохранения
       scheduleOnRN(
         onDragEnd,
         draggedSegmentId.value,

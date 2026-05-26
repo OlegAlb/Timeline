@@ -44,7 +44,6 @@ export function useGridViewport({
       let newX = contextX.value - event.translationX;
       let newY = contextY.value - event.translationY;
 
-      // Динамические границы скролла в зависимости от текущего масштаба
       const maxScrollX = Math.max(
         0,
         VIRTUAL_GRID_WIDTH * scale.value - (screenWidth - SIDEBAR_WIDTH),
@@ -94,11 +93,9 @@ export function useGridViewport({
         MAX_SCALE,
       );
 
-      // Фокальная точка пальцев относительно рабочей области сетки
       const fx = event.focalX - SIDEBAR_WIDTH;
       const fy = event.focalY - (HEADER_HEIGHT + topInset);
 
-      // Корректируем скролл, чтобы точка между пальцами оставалась неподвижной при зуме
       let newScrollX = ((fx + scrollX.value) / scale.value) * nextScale - fx;
       let newScrollY = ((fy + scrollY.value) / scale.value) * nextScale - fy;
 
@@ -112,7 +109,6 @@ export function useGridViewport({
           (screenHeight - HEADER_HEIGHT - topInset - bottomInset),
       );
 
-      // ИСПРАВЛЕНО: Теперь проверяется правильная переменная newScrollY
       if (newScrollX < 0) newScrollX = 0;
       if (newScrollX > maxScrollX) newScrollX = maxScrollX;
       if (newScrollY < 0) newScrollY = 0;
