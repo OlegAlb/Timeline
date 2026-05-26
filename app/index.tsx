@@ -1,6 +1,7 @@
 import { drawBookingBlock } from "@/src/canvas/drawBookingBlock";
+import { DraggingOverlay } from "@/src/components/DraggingOverlay";
+import { ResizingOverlay } from "@/src/components/ResizingOverlay";
 import { COLORS } from "@/src/constants/colors";
-import { ONE_MINUTE_MS } from "@/src/constants/time";
 import { validateBookingSlot } from "@/src/utils/bookingValidation";
 import {
   getRowIndexFromY,
@@ -14,9 +15,7 @@ import {
   matchFont,
   Picture,
   rect,
-  RoundedRect,
   Skia,
-  Text,
 } from "@shopify/react-native-skia";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -33,7 +32,7 @@ import { Grid } from "../src/components/Grid";
 import {
   HEADER_HEIGHT,
   MIN_DURATION,
-  ROW_HEIGHT,
+  MIN_GAP,
   SIDEBAR_WIDTH,
   VIRTUAL_GRID_HEIGHT, // Не забудь экспортировать/импортировать эти константы
   VIRTUAL_GRID_WIDTH,
@@ -42,7 +41,6 @@ import { useGridGestureEngine } from "../src/hooks/useGridGestureEngine";
 import {
   useBookingActions,
   useBookings,
-  useSegments,
   useSegmentsArray,
 } from "../src/store/useBookingStore";
 
@@ -50,7 +48,6 @@ export default function MainScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-  const segments = useSegments();
   const segmentsArray = useSegmentsArray();
   const bookings = useBookings();
 
@@ -93,6 +90,18 @@ export default function MainScreen() {
     return bookings[seg?.bookingId || ""]?.customerName || "Перенос...";
   }, [draggedId, segmentsArray, bookings]);
 
+  const resizingLayoutData = useMemo(() => {
+    if (!resizingId) return null;
+    const seg = segmentsArray.find((s) => s.id === resizingId);
+    if (!seg) return null;
+
+    return {
+      x: getXFromTime(seg.startTime, baseDayStartMs),
+      y: getYFromRowIndex(seg.resourceIndex) + 6,
+      customerName: bookings[seg.bookingId]?.customerName || "",
+    };
+  }, [resizingId, segmentsArray, baseDayStartMs, bookings]);
+
   const bookingPicture = useMemo(() => {
     const recorder = Skia.PictureRecorder();
     const canvas = recorder.beginRecording(
@@ -128,15 +137,7 @@ export default function MainScreen() {
     });
 
     return recorder.finishRecordingAsPicture();
-  }, [
-    segmentsArray,
-    bookings,
-    font,
-    draggedId,
-    resizingId,
-    screenWidth,
-    screenHeight,
-  ]);
+  }, [segmentsArray, bookings, font, draggedId, resizingId]);
 
   const handleDragStart = useCallback((id: string, width: number) => {
     setDraggedId(id);
@@ -155,9 +156,7 @@ export default function MainScreen() {
       const originalSegment = segmentsArray.find((s) => s.id === id);
       if (!originalSegment) return;
 
-      const GRID_STEP_MS = 15 * ONE_MINUTE_MS;
-      const snappedStartTime =
-        Math.round(rawStartTime / GRID_STEP_MS) * GRID_STEP_MS;
+      const snappedStartTime = Math.round(rawStartTime / MIN_GAP) * MIN_GAP;
 
       const duration = originalSegment.endTime - originalSegment.startTime;
       const snappedEndTime = snappedStartTime + duration;
@@ -176,13 +175,12 @@ export default function MainScreen() {
         return;
       }
 
-      const MIN_GAP_MS = 15 * ONE_MINUTE_MS;
       const hasOverlap = otherSegments.some((seg) => {
         if (seg.resourceId !== targetTableId) return false;
 
         return !(
-          snappedEndTime + MIN_GAP_MS <= seg.startTime ||
-          seg.endTime + MIN_GAP_MS <= snappedStartTime
+          snappedEndTime + MIN_GAP <= seg.startTime ||
+          seg.endTime + MIN_GAP <= snappedStartTime
         );
       });
 
@@ -227,19 +225,15 @@ export default function MainScreen() {
       }
       if (!targetEndTime) return;
 
-      const GRID_STEP_MS = 15 * ONE_MINUTE_MS; // 15 минут в мс
-      let snappedEndTime =
-        Math.round(targetEndTime / GRID_STEP_MS) * GRID_STEP_MS;
+      let snappedEndTime = Math.round(targetEndTime / MIN_GAP) * MIN_GAP;
 
       const otherSegments = segmentsArray.filter((s) => s.id !== id);
-
-      const MIN_GAP_MS = 15 * ONE_MINUTE_MS;
 
       let hasOverlap = otherSegments.some(
         (seg) =>
           seg.resourceId === originalSegment.resourceId &&
           !(
-            snappedEndTime + MIN_GAP_MS <= seg.startTime ||
+            snappedEndTime + MIN_GAP <= seg.startTime ||
             originalSegment.startTime >= seg.endTime
           ),
       );
@@ -250,7 +244,7 @@ export default function MainScreen() {
           (seg) =>
             seg.resourceId === originalSegment.resourceId &&
             !(
-              snappedEndTime + MIN_GAP_MS <= seg.startTime ||
+              snappedEndTime + MIN_GAP <= seg.startTime ||
               originalSegment.startTime >= seg.endTime
             ),
         );
@@ -271,7 +265,7 @@ export default function MainScreen() {
         );
       }
     },
-    [segments, updateSegment],
+    [segmentsArray, updateSegment],
   );
 
   const handleCellTap = useCallback(
@@ -332,7 +326,7 @@ export default function MainScreen() {
         addBookingWithSegments(newBooking, [newSegment]);
       }
     },
-    [segments, bookings, deleteBooking, addBookingWithSegments],
+    [segmentsArray, bookings, deleteBooking, addBookingWithSegments],
   );
 
   const {
@@ -383,74 +377,33 @@ export default function MainScreen() {
   return (
     <View style={styles.container}>
       <GestureDetector gesture={composedGesture}>
-        <View
-          style={{ width: screenWidth, height: screenHeight }}
-          collapsable={false}
-        >
-          <Canvas style={styles.canvas}>
-            <Grid
-              scrollX={scrollX}
-              scrollY={scrollY}
-              scale={scale}
-              topInset={insets.top}
-            />
-            <Group clip={clipBounds}>
-              <Group transform={contentTransform}>
-                <Picture picture={bookingPicture} />
+        <Canvas style={styles.canvas}>
+          <Grid
+            scrollX={scrollX}
+            scrollY={scrollY}
+            scale={scale}
+            topInset={insets.top}
+          />
+          <Group clip={clipBounds}>
+            <Group transform={contentTransform}>
+              <Picture picture={bookingPicture} />
 
-                {draggedId !== null && (
-                  <Group transform={dragBlockTransform}>
-                    <RoundedRect
-                      x={0}
-                      y={0}
-                      r={8}
-                      width={draggedWidthState}
-                      height={ROW_HEIGHT - 12}
-                      color={COLORS.bookingDrag}
-                      opacity={0.8}
-                    />
-                    <Text
-                      x={10}
-                      y={(ROW_HEIGHT - 12) / 2 + 4}
-                      text={draggedBookingName}
-                      font={font}
-                      color={COLORS.textMain}
-                    />
-                  </Group>
-                )}
+              <ResizingOverlay
+                layoutData={resizingLayoutData}
+                resizingWidth={resizingWidth}
+                font={font}
+              />
 
-                {resizingId !== null &&
-                  (() => {
-                    const seg = segmentsArray.find((s) => s.id === resizingId);
-                    if (!seg) return null;
-                    const x = getXFromTime(seg.startTime, baseDayStartMs);
-                    const y = getYFromRowIndex(seg.resourceIndex) + 6;
-                    const bName = bookings[seg.bookingId]?.customerName || "";
-                    return (
-                      <>
-                        <RoundedRect
-                          x={x}
-                          y={y}
-                          r={8}
-                          width={resizingWidth}
-                          height={ROW_HEIGHT - 12}
-                          color={COLORS.booking}
-                          opacity={0.9}
-                        />
-                        <Text
-                          x={x + 10}
-                          y={y + (ROW_HEIGHT - 12) / 2 + 4}
-                          text={bName}
-                          font={font}
-                          color={COLORS.textMain}
-                        />
-                      </>
-                    );
-                  })()}
-              </Group>
+              <DraggingOverlay
+                draggedId={draggedId}
+                dragBlockTransform={dragBlockTransform}
+                draggedWidthState={draggedWidthState}
+                draggedBookingName={draggedBookingName}
+                font={font}
+              />
             </Group>
-          </Canvas>
-        </View>
+          </Group>
+        </Canvas>
       </GestureDetector>
     </View>
   );

@@ -2,7 +2,11 @@ import { Gesture } from "react-native-gesture-handler";
 import { SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { HEADER_HEIGHT, SIDEBAR_WIDTH } from "../constants/grid";
-import { getRowIndexFromY, getTimeFromX } from "../utils/gridMath";
+import {
+  getCanvasCoords,
+  getRowIndexFromY,
+  getTimeFromX,
+} from "../utils/gridMath";
 
 interface TapProps {
   scrollX: SharedValue<number>;
@@ -26,11 +30,16 @@ export function useGridTapGesture({
       return;
     }
 
-    const canvasX =
-      (event.x - SIDEBAR_WIDTH + scrollX.value) / scale.value + SIDEBAR_WIDTH;
-    const canvasY =
-      (event.y - topInset - HEADER_HEIGHT + scrollY.value) / scale.value +
-      HEADER_HEIGHT;
+    const { canvasX, canvasY } = getCanvasCoords(
+      event.x,
+      event.y,
+      scrollX.value,
+      scrollY.value,
+      scale.value,
+      topInset,
+      SIDEBAR_WIDTH,
+      HEADER_HEIGHT,
+    );
 
     const clickedTime = getTimeFromX(canvasX, baseDayStartMs);
     const rowIndex = getRowIndexFromY(canvasY);
@@ -38,7 +47,6 @@ export function useGridTapGesture({
     if (rowIndex === null || !clickedTime) return;
 
     const clickedTableId = `table_${rowIndex + 1}`;
-
     scheduleOnRN(onCellTap, clickedTableId, clickedTime);
   });
 

@@ -4,6 +4,8 @@ import { scheduleOnRN } from "react-native-worklets";
 import { HEADER_HEIGHT, ROW_HEIGHT, SIDEBAR_WIDTH } from "../constants/grid";
 import { BookingSegment } from "../store/useBookingStore";
 import {
+  findSegmentAtCoords,
+  getCanvasCoords,
   getWidthByDuration,
   getXFromTime,
   getYFromRowIndex,
@@ -40,34 +42,27 @@ export function useGridDragGesture({
     .activateAfterLongPress(400)
     .onStart((event) => {
       // Переводим начальную точку касания экрана в координаты холста canvas
-      const canvasX =
-        (event.x - SIDEBAR_WIDTH + scrollX.value) / scale.value + SIDEBAR_WIDTH;
-      const canvasY =
-        (event.y - topInset - HEADER_HEIGHT + scrollY.value) / scale.value +
-        HEADER_HEIGHT;
+      const { canvasX, canvasY } = getCanvasCoords(
+        event.x,
+        event.y,
+        scrollX.value,
+        scrollY.value,
+        scale.value,
+        topInset,
+        SIDEBAR_WIDTH,
+        HEADER_HEIGHT,
+      );
 
-      // Хит-тест: ищем, на какой сегмент наступили (прямо на UI-потоке)
-      const segments = segmentsSV.value;
-      let foundSeg = null;
-
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        const x = getXFromTime(seg.startTime, baseDayStartMs);
-
-        const y = getYFromRowIndex(seg.resourceIndex) + 6;
-        const width = getWidthByDuration(seg.endTime - seg.startTime) - 4;
-        const height = ROW_HEIGHT - 12;
-
-        if (
-          canvasX >= x &&
-          canvasX <= x + width &&
-          canvasY >= y &&
-          canvasY <= y + height
-        ) {
-          foundSeg = seg;
-          break;
-        }
-      }
+      const foundSeg = findSegmentAtCoords(
+        canvasX,
+        canvasY,
+        segmentsSV.value,
+        baseDayStartMs,
+        ROW_HEIGHT,
+        getXFromTime,
+        getYFromRowIndex,
+        getWidthByDuration,
+      );
 
       if (foundSeg) {
         draggedSegmentId.value = foundSeg.id;
@@ -89,11 +84,16 @@ export function useGridDragGesture({
     .onUpdate((event) => {
       if (!draggedSegmentId.value) return;
 
-      const canvasX =
-        (event.x - SIDEBAR_WIDTH + scrollX.value) / scale.value + SIDEBAR_WIDTH;
-      const canvasY =
-        (event.y - topInset - HEADER_HEIGHT + scrollY.value) / scale.value +
-        HEADER_HEIGHT;
+      const { canvasX, canvasY } = getCanvasCoords(
+        event.x,
+        event.y,
+        scrollX.value,
+        scrollY.value,
+        scale.value,
+        topInset,
+        SIDEBAR_WIDTH,
+        HEADER_HEIGHT,
+      );
 
       // Плавно двигаем блок за пальцем
       draggedX.value = canvasX - dragOffsetX.value;

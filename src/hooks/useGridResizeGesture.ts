@@ -5,12 +5,13 @@ import {
   END_HOUR,
   HEADER_HEIGHT,
   MIN_DURATION,
+  MIN_GAP,
   ROW_HEIGHT,
   SIDEBAR_WIDTH,
 } from "../constants/grid";
-import { ONE_MINUTE_MS } from "../constants/time";
 import { BookingSegment } from "../store/useBookingStore";
 import {
+  calculateMaxEndTime,
   getTimeFromX,
   getWidthByDuration,
   getXFromTime,
@@ -101,42 +102,23 @@ export function useGridResizeGesture({
 
       const segments = segmentsSV.value;
       const currentSeg = segments.find((s) => s.id === resizingSegmentId.value);
+
       if (!currentSeg) return;
 
-      const deltaX = event.translationX / scale.value;
-      let newWidth = resizingStartWidth.value + deltaX;
-
       const minW = getWidthByDuration(MIN_DURATION);
-      if (newWidth < minW) {
-        newWidth = minW;
-      }
-
-      const startDay = new Date(currentSeg.startTime);
-      const workEndTime = startDay.setHours(END_HOUR, 0, 0, 0);
-
-      let maxEndTime = workEndTime;
-      const MIN_GAP_MS = 15 * ONE_MINUTE_MS;
-
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        if (
-          seg.id !== currentSeg.id &&
-          seg.resourceId === currentSeg.resourceId &&
-          seg.startTime > currentSeg.startTime
-        ) {
-          const allowedLimitBeforeSeg = seg.startTime - MIN_GAP_MS;
-          if (allowedLimitBeforeSeg < maxEndTime) {
-            maxEndTime = allowedLimitBeforeSeg;
-          }
-        }
-      }
-
+      const maxEndTime = calculateMaxEndTime(
+        currentSeg,
+        segments,
+        END_HOUR,
+        MIN_GAP,
+        baseDayStartMs,
+      );
       const maxW = getWidthByDuration(maxEndTime - currentSeg.startTime);
-      if (newWidth > maxW) {
-        newWidth = maxW;
-      }
 
-      resizingWidth.value = newWidth;
+      const calculatedWidth =
+        resizingStartWidth.value + event.translationX / scale.value;
+
+      resizingWidth.value = Math.max(minW, Math.min(calculatedWidth, maxW));
     })
     .onEnd(() => {
       if (!resizingSegmentId.value) return;

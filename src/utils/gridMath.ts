@@ -8,6 +8,7 @@ import {
   VIRTUAL_GRID_WIDTH,
 } from "../constants/grid";
 import { ONE_HOUR_MS, ONE_MINUTE_MS } from "../constants/time";
+import { BookingSegment } from "../store/useBookingStore";
 
 /**
  * Переводит таймстамп в X-координату на холсте относительно начала выбранного дня.
@@ -107,3 +108,99 @@ export const getWidthByDuration = (
   "worklet";
   return (durationMs / ONE_HOUR_MS) * hourWidth;
 };
+
+/**
+ * Переводит экранные координаты касания в координаты виртуального холста (canvas)
+ * с учетом скролла, масштабирования и системных отступов.
+ */
+export function getCanvasCoords(
+  screenX: number,
+  screenY: number,
+  scrollX: number,
+  scrollY: number,
+  scale: number,
+  topInset: number,
+  sidebarWidth: number,
+  headerHeight: number,
+) {
+  "worklet";
+  const canvasX = (screenX - sidebarWidth + scrollX) / scale + sidebarWidth;
+  const canvasY =
+    (screenY - topInset - headerHeight + scrollY) / scale + headerHeight;
+  return { canvasX, canvasY };
+}
+
+/**
+ * Выполняет хит-тестинг: ищет, над каким сегментом бронирования
+ * находятся виртуальные координаты холста.
+ */
+export function findSegmentAtCoords(
+  canvasX: number,
+  canvasY: number,
+  segments: BookingSegment[],
+  baseDayStartMs: number,
+  rowHeight: number,
+  getXFromTime: (time: number, baseMs: number) => number,
+  getYFromRowIndex: (index: number) => number,
+  getWidthByDuration: (duration: number) => number,
+): BookingSegment | null {
+  "worklet";
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg.resourceId) continue;
+
+    // В будущем парсинг строки лучше заменить на числовое поле rowIndex прямо в объекте
+    const tableIndex = parseInt(seg.resourceId.replace("table_", ""), 10) - 1;
+    if (isNaN(tableIndex)) continue;
+
+    const segX = getXFromTime(seg.startTime, baseDayStartMs);
+    const segY = getYFromRowIndex(tableIndex);
+    const segW = getWidthByDuration(seg.endTime - seg.startTime);
+
+    // Проверяем, попала ли точка внутрь прямоугольника плашки бронирования
+    if (
+      canvasX >= segX &&
+      canvasX <= segX + segW &&
+      canvasY >= segY &&
+      canvasY <= segY + rowHeight
+    ) {
+      return seg;
+    }
+  }
+  return null;
+}
+
+/**
+ * Вычисляет максимально доступное время окончания (endTime) для ресайза сегмента,
+ * предотвращая наложение на следующие бронирования той же строки или выход за рамки сетки.
+ */
+export function calculateMaxEndTime(
+  currentSeg: BookingSegment,
+  segments: BookingSegment[],
+  endHour: number,
+  minGapMs: number,
+  baseDayStartMs: number,
+): number {
+  "worklet";
+
+  // Базовое ограничение по умолчанию — конец рабочего дня на сетке
+  const dayEndMs = baseDayStartMs + endHour * 60 * 60 * 1000;
+  let maxEndTime = dayEndMs;
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (
+      seg.id !== currentSeg.id &&
+      seg.resourceId === currentSeg.resourceId &&
+      seg.startTime > currentSeg.startTime
+    ) {
+      const allowedLimitBeforeSeg = seg.startTime - minGapMs;
+      if (allowedLimitBeforeSeg < maxEndTime) {
+        maxEndTime = allowedLimitBeforeSeg;
+      }
+    }
+  }
+
+  return maxEndTime;
+}
