@@ -10,7 +10,7 @@ The project demonstrates techniques commonly used in calendar, reservation and r
 
 ## Demo
 
-<video src="assets/video/demo.mp4" width="100%" controls></video>
+<video src="assets/video/demo.mp4" width="100%" controls autoplay loop muted playsinline></video>
 
 ## Features
 
@@ -55,20 +55,14 @@ The project demonstrates techniques commonly used in calendar, reservation and r
 ```text
 User Input
     │
-    ▼
 Gesture Engine
     │
-    ▼
-Coordinate System
-(Screen → Canvas → Domain)
+Coordinate System (Screen → Canvas → Domain)
     │
-    ▼
 Scheduling Rules
     │
-    ▼
 State Management
     │
-    ▼
 Canvas Rendering
 ```
 
