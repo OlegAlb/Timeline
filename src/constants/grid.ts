@@ -1,14 +1,12 @@
-import { Dimensions } from "react-native";
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+import { ONE_HOUR_MS, ONE_MINUTE_MS } from "./time";
 
 export const TOTAL_TABLES = 30;
 export const START_HOUR = 8;
 export const END_HOUR = 24;
 export const TOTAL_HOURS = END_HOUR - START_HOUR;
 
-export const MIN_DURATION = 60 * 60 * 1000; // 1 час
-export const MIN_GAP = 15 * 60 * 1000; // 15 минут
+export const MIN_DURATION = ONE_HOUR_MS;
+export const MIN_GAP = 15 * ONE_MINUTE_MS;
 
 export const TIME_STEP_MINUTES = 15;
 export const STEPS_PER_HOUR = 60 / TIME_STEP_MINUTES;
@@ -23,30 +21,3 @@ export const STEP_WIDTH = HOUR_WIDTH / STEPS_PER_HOUR;
 
 export const VIRTUAL_GRID_WIDTH = TOTAL_HOURS * HOUR_WIDTH;
 export const VIRTUAL_GRID_HEIGHT = TOTAL_TABLES * ROW_HEIGHT;
-
-export const MAX_SCROLL_X = Math.max(
-  0,
-  VIRTUAL_GRID_WIDTH - (SCREEN_WIDTH - SIDEBAR_WIDTH),
-);
-export const MAX_SCROLL_Y = Math.max(
-  0,
-  VIRTUAL_GRID_HEIGHT - (SCREEN_HEIGHT - HEADER_HEIGHT),
-);
-
-export const COLORS = {
-  bgBackground: "#13131A",
-  bgSurface: "#1C1C24",
-  gridLines: "#292934",
-  textMain: "#FFFFFF",
-  textMuted: "#7E7E8F",
-
-  booking: {
-    upcoming: "#38BDF8",
-    current: "#FBBF24",
-    expired: "#F87171",
-    textLight: "#FFFFFF",
-    textDark: "#1E1E24",
-  },
-
-  linkLine: "#6366F1",
-};

@@ -1,13 +1,21 @@
+import { drawBookingBlock } from "@/src/canvas/drawBookingBlock";
+import { COLORS } from "@/src/constants/colors";
+import { ONE_MINUTE_MS } from "@/src/constants/time";
+import { validateBookingSlot } from "@/src/utils/bookingValidation";
+import {
+  getRowIndexFromY,
+  getTimeFromX,
+  getXFromTime,
+  getYFromRowIndex,
+} from "@/src/utils/gridMath";
 import {
   Canvas,
   Group,
   matchFont,
-  PaintStyle,
   Picture,
   rect,
   RoundedRect,
   Skia,
-  StrokeCap,
   Text,
 } from "@shopify/react-native-skia";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,19 +29,8 @@ import {
 import { GestureDetector } from "react-native-gesture-handler";
 import { useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { drawBookingBlock } from "@/src/components/BookingBlock";
-import {
-  getResourceIdFromY,
-  getTimeFromX,
-  getWidthByDuration,
-  getXFromTime,
-  getYFromResourceId,
-  validateBookingSlot,
-} from "@/src/utils/gridMath";
 import { Grid } from "../src/components/Grid";
 import {
-  COLORS,
   HEADER_HEIGHT,
   MIN_DURATION,
   ROW_HEIGHT,
@@ -42,73 +39,34 @@ import {
   VIRTUAL_GRID_WIDTH,
 } from "../src/constants/grid";
 import { useGridGestureEngine } from "../src/hooks/useGridGestureEngine";
-import { useBookingStore } from "../src/store/useBookingStore";
+import {
+  useBookingActions,
+  useBookings,
+  useSegments,
+  useSegmentsArray,
+} from "../src/store/useBookingStore";
 
 export default function MainScreen() {
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-  const segments = useBookingStore((state) => state.segments);
-  const bookings = useBookingStore((state) => state.bookings);
-  const addBookingWithSegments = useBookingStore(
-    (state) => state.addBookingWithSegments,
-  );
-  const deleteBooking = useBookingStore((state) => state.deleteBooking);
-  const updateSegment = useBookingStore((state) => state.updateSegment);
+  const segments = useSegments();
+  const segmentsArray = useSegmentsArray();
+  const bookings = useBookings();
+
+  const { addBookingWithSegments, deleteBooking, updateSegment } =
+    useBookingActions();
 
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [draggedWidthState, setDraggedWidthState] = useState(0);
+  const [resizingId, setResizingId] = useState<string | null>(null);
 
-  const segmentsSV = useSharedValue(segments);
+  const segmentsSV = useSharedValue(segmentsArray);
+
   useEffect(() => {
-    segmentsSV.value = segments;
-  }, [segments]);
+    segmentsSV.value = segmentsArray;
+  }, [segmentsArray]);
 
-  const handleDragStart = useCallback((id: string, width: number) => {
-    setDraggedId(id);
-    setDraggedWidthState(width);
-  }, []);
-
-  const handleDragEnd = useCallback(
-    (id: string, finalCanvasX: number, finalCanvasY: number) => {
-      setDraggedId(null); // Возвращаем видимость в основной снимок
-
-      // 1. Пересчитываем координаты холста обратно в понятные сетке сущности
-      // Берем центр строки (финальный Y + половина высоты строки), чтобы точнее попадать в нужный стол
-      const targetTableId = getResourceIdFromY(
-        finalCanvasY + (ROW_HEIGHT - 12) / 2,
-      );
-      const targetStartTime = getTimeFromX(finalCanvasX);
-
-      if (!targetTableId || !targetStartTime) return;
-
-      // 2. Ищем оригинальный сегмент для расчета его длительности
-      const originalSegment = segments.find((s) => s.id === id);
-      if (!originalSegment) return;
-
-      const duration = originalSegment.endTime - originalSegment.startTime;
-      const targetEndTime = targetStartTime + duration;
-
-      // 3. ВАЖНО: Валидируем слот. Передаем ВСЕ сегменты, КРОМЕ текущего перемещаемого,
-      // иначе он будет пересекаться сам с собой в своей старой точке!
-      const otherSegments = segments.filter((s) => s.id !== id);
-      const validation = validateBookingSlot(
-        targetTableId,
-        targetStartTime,
-        otherSegments,
-      );
-
-      if (!validation.isValid) {
-        Alert.alert("Ошибка перемещения", validation.error || "Слот занят");
-      } else {
-        // 4. Если всё ок — обновляем стор
-        updateSegment(id, targetTableId, targetStartTime, targetEndTime);
-      }
-    },
-    [segments, updateSegment],
-  );
-
-  // Стабилизируем шрифт, чтобы он не пересоздавался при каждом рендере
   const font = useMemo(
     () =>
       matchFont({
@@ -123,9 +81,202 @@ export default function MainScreen() {
     [],
   );
 
+  const baseDayStartMs = useMemo(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  }, []);
+
+  const draggedBookingName = useMemo(() => {
+    if (!draggedId) return "";
+    const seg = segmentsArray.find((s) => s.id === draggedId);
+    return bookings[seg?.bookingId || ""]?.customerName || "Перенос...";
+  }, [draggedId, segmentsArray, bookings]);
+
+  const bookingPicture = useMemo(() => {
+    const recorder = Skia.PictureRecorder();
+    const canvas = recorder.beginRecording(
+      rect(
+        0,
+        0,
+        SIDEBAR_WIDTH + VIRTUAL_GRID_WIDTH,
+        HEADER_HEIGHT + VIRTUAL_GRID_HEIGHT,
+      ),
+    );
+
+    const paints = {
+      rectPaint: Skia.Paint(),
+      textPaint: Skia.Paint(),
+      controlPaint: Skia.Paint(),
+    };
+
+    // Настраиваем кисть для фона бронирования
+    paints.rectPaint.setAntiAlias(true);
+    paints.rectPaint.setColor(Skia.Color(COLORS.booking)); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+
+    // Настраиваем остальные кисти
+    paints.textPaint.setColor(Skia.Color(COLORS.textMain));
+    paints.controlPaint.setColor(Skia.Color(COLORS.textMain));
+
+    segmentsArray.forEach((segment) => {
+      if (segment.id === draggedId || segment.id === resizingId) return;
+
+      const booking = bookings[segment.bookingId];
+      if (!booking) return;
+
+      drawBookingBlock(canvas, segment, booking, font, baseDayStartMs, paints);
+    });
+
+    return recorder.finishRecordingAsPicture();
+  }, [
+    segmentsArray,
+    bookings,
+    font,
+    draggedId,
+    resizingId,
+    screenWidth,
+    screenHeight,
+  ]);
+
+  const handleDragStart = useCallback((id: string, width: number) => {
+    setDraggedId(id);
+    setDraggedWidthState(width);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (id: string, canvasX: number, canvasY: number) => {
+      setDraggedId(null);
+
+      const rowIndex = getRowIndexFromY(canvasY);
+      const targetTableId = rowIndex !== null ? `table_${rowIndex + 1}` : null;
+      const rawStartTime = getTimeFromX(canvasX, baseDayStartMs);
+      if (!targetTableId || !rawStartTime) return;
+
+      const originalSegment = segmentsArray.find((s) => s.id === id);
+      if (!originalSegment) return;
+
+      const GRID_STEP_MS = 15 * ONE_MINUTE_MS;
+      const snappedStartTime =
+        Math.round(rawStartTime / GRID_STEP_MS) * GRID_STEP_MS;
+
+      const duration = originalSegment.endTime - originalSegment.startTime;
+      const snappedEndTime = snappedStartTime + duration;
+
+      const otherSegments = segmentsArray.filter((s) => s.id !== id);
+
+      const validation = validateBookingSlot(
+        targetTableId,
+        snappedStartTime,
+        otherSegments,
+        Date.now(),
+      );
+
+      if (!validation.isValid) {
+        Alert.alert("Ошибка перемещения", validation.error || "Слот занят");
+        return;
+      }
+
+      const MIN_GAP_MS = 15 * ONE_MINUTE_MS;
+      const hasOverlap = otherSegments.some((seg) => {
+        if (seg.resourceId !== targetTableId) return false;
+
+        return !(
+          snappedEndTime + MIN_GAP_MS <= seg.startTime ||
+          seg.endTime + MIN_GAP_MS <= snappedStartTime
+        );
+      });
+
+      if (hasOverlap) {
+        Alert.alert(
+          "Ошибка перемещения",
+          "Растянутая бронь пересекается с другим бронированием или нарушает минимальный зазор в 15 минут",
+        );
+      } else {
+        updateSegment(
+          id,
+          targetTableId,
+          rowIndex || 0,
+          snappedStartTime,
+          snappedEndTime,
+        );
+      }
+    },
+    [segmentsArray, updateSegment],
+  );
+
+  const handleResizeStart = useCallback((id: string) => {
+    setResizingId(id);
+  }, []);
+
+  const handleResizeEnd = useCallback(
+    (
+      id: string,
+      payload: { finalWidth: number; calculatedNewEndTime?: number },
+    ) => {
+      const { finalWidth, calculatedNewEndTime } = payload;
+
+      setResizingId(null);
+
+      const originalSegment = segmentsArray.find((s) => s.id === id);
+      if (!originalSegment) return;
+
+      let targetEndTime = calculatedNewEndTime;
+      if (!targetEndTime) {
+        const startX = getXFromTime(originalSegment.startTime, baseDayStartMs);
+        targetEndTime = getTimeFromX(startX + finalWidth, baseDayStartMs);
+      }
+      if (!targetEndTime) return;
+
+      const GRID_STEP_MS = 15 * ONE_MINUTE_MS; // 15 минут в мс
+      let snappedEndTime =
+        Math.round(targetEndTime / GRID_STEP_MS) * GRID_STEP_MS;
+
+      const otherSegments = segmentsArray.filter((s) => s.id !== id);
+
+      const MIN_GAP_MS = 15 * ONE_MINUTE_MS;
+
+      let hasOverlap = otherSegments.some(
+        (seg) =>
+          seg.resourceId === originalSegment.resourceId &&
+          !(
+            snappedEndTime + MIN_GAP_MS <= seg.startTime ||
+            originalSegment.startTime >= seg.endTime
+          ),
+      );
+
+      if (hasOverlap) {
+        snappedEndTime = targetEndTime;
+        hasOverlap = otherSegments.some(
+          (seg) =>
+            seg.resourceId === originalSegment.resourceId &&
+            !(
+              snappedEndTime + MIN_GAP_MS <= seg.startTime ||
+              originalSegment.startTime >= seg.endTime
+            ),
+        );
+      }
+
+      if (hasOverlap) {
+        Alert.alert(
+          "Ошибка изменения длительности",
+          "Слот пересекается с другим бронированием или нарушает минимальный зазор",
+        );
+      } else {
+        updateSegment(
+          id,
+          originalSegment.resourceId,
+          originalSegment.resourceIndex,
+          originalSegment.startTime,
+          snappedEndTime,
+        );
+      }
+    },
+    [segments, updateSegment],
+  );
+
   const handleCellTap = useCallback(
-    (tableId: string, startTime: number, canvasX: number, canvasY: number) => {
-      const clickedSegment = segments.find(
+    (tableId: string, startTime: number) => {
+      const clickedSegment = segmentsArray.find(
         (seg) =>
           seg.resourceId === tableId &&
           startTime >= seg.startTime &&
@@ -133,39 +284,19 @@ export default function MainScreen() {
       );
 
       if (clickedSegment) {
-        const x = getXFromTime(clickedSegment.startTime);
-        const width = getWidthByDuration(
-          clickedSegment.endTime - clickedSegment.startTime,
-        );
-        const y = getYFromResourceId(clickedSegment.resourceId) + 6;
-        const height = ROW_HEIGHT - 12;
-
-        const buttonX = x + width - 22;
-        const buttonY = y + height / 2;
-        const buttonRadius = 12;
-
-        const dx = canvasX - buttonX;
-        const dy = canvasY - buttonY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance <= buttonRadius + 4) {
-          Alert.alert(
-            "Удалить бронирование?",
-            `Вы действительно хотите удалить бронь на имя ${bookings[clickedSegment.bookingId]?.customerName}?`,
-            [
-              { text: "Отмена", style: "cancel" },
-              {
-                text: "Удалить",
-                style: "destructive",
-                onPress: () => deleteBooking(clickedSegment.bookingId),
-              },
-            ],
-          );
-          return;
-        }
-
         const targetBooking = bookings[clickedSegment.bookingId];
-        Alert.alert("Инфо", `Просмотр брони: ${targetBooking?.customerName}`);
+        Alert.alert(
+          "Управление бронированием",
+          `Выбрано бронирование гостя: ${targetBooking?.customerName || "Без имени"}`,
+          [
+            { text: "Назад", style: "cancel" },
+            {
+              text: "Удалить бронь",
+              style: "destructive",
+              onPress: () => deleteBooking(clickedSegment.bookingId),
+            },
+          ],
+        );
         return;
       }
 
@@ -173,7 +304,12 @@ export default function MainScreen() {
       const segmentId = `seg_${Date.now()}`;
       const endTime = startTime + MIN_DURATION;
 
-      const validation = validateBookingSlot(tableId, startTime, segments);
+      const validation = validateBookingSlot(
+        tableId,
+        startTime,
+        segmentsArray,
+        Date.now(),
+      );
 
       if (!validation.isValid) {
         Alert.alert("Ошибка", validation.error || "Невозможно забронировать");
@@ -188,6 +324,7 @@ export default function MainScreen() {
           id: segmentId,
           bookingId: bookingId,
           resourceId: tableId,
+          resourceIndex: parseInt(tableId.replace("table_", ""), 10) - 1,
           startTime: startTime,
           endTime: endTime,
         };
@@ -198,28 +335,32 @@ export default function MainScreen() {
     [segments, bookings, deleteBooking, addBookingWithSegments],
   );
 
-  const { scrollX, scrollY, scale, draggedX, draggedY, composedGesture } =
-    useGridGestureEngine({
-      topInset: insets.top,
-      bottomInset: insets.bottom,
-      screenWidth,
-      screenHeight,
-      segmentsSV,
-      onCellTap: handleCellTap,
-      onDragStart: handleDragStart,
-      onDragEnd: handleDragEnd,
-    });
+  const {
+    scrollX,
+    scrollY,
+    scale,
+    draggedX,
+    draggedY,
+    resizingWidth,
+    composedGesture,
+  } = useGridGestureEngine({
+    topInset: insets.top,
+    bottomInset: insets.bottom,
+    screenWidth,
+    screenHeight,
+    baseDayStartMs,
+    segmentsSV,
+    onCellTap: handleCellTap,
+    onDragStart: handleDragStart,
+    onDragEnd: handleDragEnd,
+    onResizeStart: handleResizeStart,
+    onResizeEnd: handleResizeEnd,
+  });
 
   const dragBlockTransform = useDerivedValue(() => [
     { translateX: draggedX.value },
     { translateY: draggedY.value },
   ]);
-
-  const draggedBookingName = useMemo(() => {
-    if (!draggedId) return "";
-    const seg = segments.find((s) => s.id === draggedId);
-    return bookings[seg?.bookingId || ""]?.customerName || "Перенос...";
-  }, [draggedId, segments, bookings]);
 
   const contentTransform = useDerivedValue(() => [
     { translateY: insets.top },
@@ -239,55 +380,6 @@ export default function MainScreen() {
     screenHeight - (HEADER_HEIGHT + insets.top + insets.bottom),
   );
 
-  // Чистый React useMemo: перерисовывает Picture ТОЛЬКО при изменении данных в Zustand
-  const bookingPicture = useMemo(() => {
-    const recorder = Skia.PictureRecorder();
-    // Создаем холст под размеры всей виртуальной сетки
-    const canvas = recorder.beginRecording(
-      rect(
-        0,
-        0,
-        SIDEBAR_WIDTH + VIRTUAL_GRID_WIDTH,
-        HEADER_HEIGHT + VIRTUAL_GRID_HEIGHT,
-      ),
-    );
-
-    const paints = {
-      rectPaint: Skia.Paint(),
-      textPaint: Skia.Paint(),
-      deleteBtnPaint: Skia.Paint(),
-      crossPaint: Skia.Paint(),
-    };
-
-    paints.rectPaint.setAntiAlias(true);
-    paints.textPaint.setColor(Skia.Color("#FFFFFF"));
-    paints.deleteBtnPaint.setAntiAlias(true);
-    paints.deleteBtnPaint.setColor(Skia.Color("#EF4444"));
-    paints.crossPaint.setAntiAlias(true);
-    paints.crossPaint.setColor(Skia.Color("#FFFFFF"));
-    paints.crossPaint.setStrokeWidth(2);
-    paints.crossPaint.setStyle(PaintStyle.Stroke);
-    paints.crossPaint.setStrokeCap(StrokeCap.Round);
-
-    segments.forEach((segment) => {
-      if (segment.id === draggedId) return; // ПРОПУСКАЕМ перемещаемый элемент!
-
-      const booking = bookings[segment.bookingId];
-      if (!booking) return;
-
-      const x = getXFromTime(segment.startTime);
-      const y = getYFromResourceId(segment.resourceId) + 6;
-      const width = getWidthByDuration(segment.endTime - segment.startTime) - 4;
-      const height = ROW_HEIGHT - 12;
-
-      // Твое ручное отсечение (viewport Left/Right/Top/Bottom)...
-      // if (isVisible) drawBookingBlock(canvas, segment, booking, font, paints);
-      drawBookingBlock(canvas, segment, booking, font, paints);
-    });
-
-    return recorder.finishRecordingAsPicture();
-  }, [segments, bookings, font, draggedId, screenWidth, screenHeight]);
-
   return (
     <View style={styles.container}>
       <GestureDetector gesture={composedGesture}>
@@ -304,10 +396,8 @@ export default function MainScreen() {
             />
             <Group clip={clipBounds}>
               <Group transform={contentTransform}>
-                {/* Наша закэшированная картинка без перетаскиваемого блока */}
                 <Picture picture={bookingPicture} />
 
-                {/* Рендерим плавающий блок, только если идет процесс перетаскивания */}
                 {draggedId !== null && (
                   <Group transform={dragBlockTransform}>
                     <RoundedRect
@@ -316,18 +406,47 @@ export default function MainScreen() {
                       r={8}
                       width={draggedWidthState}
                       height={ROW_HEIGHT - 12}
-                      color="#3B82F6" // Приятный синий цвет для активного Drag'а
-                      opacity={0.8} // Делаем полупрозрачным, чтобы видеть сетку под ним
+                      color={COLORS.bookingDrag}
+                      opacity={0.8}
                     />
                     <Text
                       x={10}
                       y={(ROW_HEIGHT - 12) / 2 + 4}
                       text={draggedBookingName}
                       font={font}
-                      color="#FFFFFF"
+                      color={COLORS.textMain}
                     />
                   </Group>
                 )}
+
+                {resizingId !== null &&
+                  (() => {
+                    const seg = segmentsArray.find((s) => s.id === resizingId);
+                    if (!seg) return null;
+                    const x = getXFromTime(seg.startTime, baseDayStartMs);
+                    const y = getYFromRowIndex(seg.resourceIndex) + 6;
+                    const bName = bookings[seg.bookingId]?.customerName || "";
+                    return (
+                      <>
+                        <RoundedRect
+                          x={x}
+                          y={y}
+                          r={8}
+                          width={resizingWidth}
+                          height={ROW_HEIGHT - 12}
+                          color={COLORS.booking}
+                          opacity={0.9}
+                        />
+                        <Text
+                          x={x + 10}
+                          y={y + (ROW_HEIGHT - 12) / 2 + 4}
+                          text={bName}
+                          font={font}
+                          color={COLORS.textMain}
+                        />
+                      </>
+                    );
+                  })()}
               </Group>
             </Group>
           </Canvas>

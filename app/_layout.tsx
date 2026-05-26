@@ -1,3 +1,4 @@
+import { COLORS } from "@/src/constants/colors";
 import { Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet } from "react-native";
@@ -16,5 +17,5 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#13131A" },
+  container: { flex: 1, backgroundColor: COLORS.bgBackground },
 });
