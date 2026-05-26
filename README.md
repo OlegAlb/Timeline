@@ -10,7 +10,7 @@ The project demonstrates techniques commonly used in calendar, reservation and r
 
 ## Demo
 
-<video src="/assets/video/demo.mp4" width="100%" controls autoplay loop muted playsinline></video>
+![](assets/video/demo.mp4)
 
 ## Features
 
