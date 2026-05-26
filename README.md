@@ -10,7 +10,7 @@ The project demonstrates techniques commonly used in calendar, reservation and r
 
 ## Demo
 
-![](assets/video/demo.mp4)
+![](assets/video/demo.gif)
 
 ## Features
 
