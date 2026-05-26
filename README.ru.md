@@ -1,6 +1,6 @@
 # Interactive Booking Scheduler
 
-🇷🇺 Русский | 🇬🇧 [English](README.md)
+Русский | [English](README.md)
 
 Высокопроизводительный планировщик бронирований, построенный на React Native, Skia, Reanimated и Gesture Handler.
 

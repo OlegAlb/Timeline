@@ -1,6 +1,6 @@
 # Interactive Booking Scheduler
 
-🇷🇺 Русский [Russian](README.ru.md) | 🇬🇧 English
+[Русский](README.ru.md) | English
 
 A high-performance booking scheduler built with React Native, Skia, Reanimated and Gesture Handler.
 
