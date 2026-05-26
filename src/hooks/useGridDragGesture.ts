@@ -2,6 +2,7 @@ import { Gesture } from "react-native-gesture-handler";
 import { SharedValue, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { HEADER_HEIGHT, ROW_HEIGHT, SIDEBAR_WIDTH } from "../constants/grid";
+import { UI } from "../constants/ui";
 import { BookingSegment } from "../store/useBookingStore";
 import {
   findSegmentAtCoords,
@@ -66,7 +67,8 @@ export function useGridDragGesture({
       if (foundSeg) {
         draggedSegmentId.value = foundSeg.id;
         const width =
-          getWidthByDuration(foundSeg.endTime - foundSeg.startTime) - 4;
+          getWidthByDuration(foundSeg.endTime - foundSeg.startTime) -
+          UI.horizontalPadding;
 
         scheduleOnRN(onDragStart, foundSeg.id, width);
 
@@ -74,7 +76,8 @@ export function useGridDragGesture({
           canvasX - getXFromTime(foundSeg.startTime, baseDayStartMs);
 
         dragOffsetY.value =
-          canvasY - (getYFromRowIndex(foundSeg.resourceIndex) + 6);
+          canvasY -
+          (getYFromRowIndex(foundSeg.resourceIndex) + UI.verticalPadding);
 
         draggedX.value = canvasX - dragOffsetX.value;
         draggedY.value = canvasY - dragOffsetY.value;

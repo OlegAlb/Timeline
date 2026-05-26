@@ -9,6 +9,7 @@ import {
   ROW_HEIGHT,
   SIDEBAR_WIDTH,
 } from "../constants/grid";
+import { UI } from "../constants/ui";
 import { BookingSegment } from "../store/useBookingStore";
 import {
   calculateMaxEndTime,
@@ -69,20 +70,22 @@ export function useGridResizeGesture({
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
         const x = getXFromTime(seg.startTime, baseDayStartMs);
-        const y = getYFromRowIndex(seg.resourceIndex) + 6;
-        const w = getWidthByDuration(seg.endTime - seg.startTime) - 4;
+        const y = getYFromRowIndex(seg.resourceIndex) + UI.verticalPadding;
+        const w =
+          getWidthByDuration(seg.endTime - seg.startTime) -
+          UI.horizontalPadding;
         const h = ROW_HEIGHT - 12;
 
         const handleSize = Math.min(25, w / 2);
 
         if (
           canvasX >= x + w - handleSize &&
-          canvasX <= x + w + 15 &&
+          canvasX <= x + w + UI.resizeHandleWidth &&
           canvasY >= y &&
           canvasY <= y + h
         ) {
           foundSeg = seg;
-          segWidth = w + 4;
+          segWidth = w + UI.horizontalPadding;
           break;
         }
       }

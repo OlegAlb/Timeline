@@ -1,4 +1,10 @@
-import { Group, Rect, Text, matchFont } from "@shopify/react-native-skia";
+import {
+  Group,
+  Rect,
+  Text,
+  Transforms3d,
+  matchFont,
+} from "@shopify/react-native-skia";
 import React from "react";
 import { SharedValue, useDerivedValue } from "react-native-reanimated";
 import { COLORS } from "../constants/colors";
@@ -8,6 +14,7 @@ import {
   SIDEBAR_WIDTH,
   VIRTUAL_GRID_HEIGHT,
 } from "../constants/grid";
+import { UI } from "../constants/ui";
 
 const font = matchFont({
   fontFamily: "sans-serif",
@@ -18,7 +25,7 @@ const font = matchFont({
 interface GridSidebarProps {
   tablesArray: number[];
   scale: SharedValue<number>;
-  sidebarTransform: SharedValue<any>;
+  sidebarTransform: SharedValue<Transforms3d>;
 }
 
 const TableText = ({
@@ -30,7 +37,7 @@ const TableText = ({
   index: number;
   scale: SharedValue<number>;
 }) => {
-  const yPosition = HEADER_HEIGHT + index * ROW_HEIGHT + ROW_HEIGHT / 2 + 4;
+  const yPosition = HEADER_HEIGHT + index * ROW_HEIGHT + ROW_HEIGHT / 2 + UI.horizontalPadding;
   const transform = useDerivedValue(() => [
     { translateY: yPosition },
     { scaleY: 1 / scale.value },

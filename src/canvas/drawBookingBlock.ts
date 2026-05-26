@@ -13,6 +13,7 @@ import {
 } from "@shopify/react-native-skia";
 import { ROW_HEIGHT } from "../constants/grid";
 import { Booking, BookingSegment } from "../store/useBookingStore";
+import { UI } from "../constants/ui";
 
 interface GridPaints {
   rectPaint: SkPaint;
@@ -45,7 +46,11 @@ export const drawBookingBlock = (
 
   if (width <= 0) return;
 
-  const rrect = Skia.RRectXY(rect(x, y, width, height), 8, 8);
+  const rrect = Skia.RRectXY(
+    rect(x, y, width, height),
+    UI.borderRadius,
+    UI.borderRadius,
+  );
   canvas.drawRRect(rrect, paints.rectPaint);
 
   if (font) {

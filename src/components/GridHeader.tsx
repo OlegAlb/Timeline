@@ -1,4 +1,10 @@
-import { Group, Rect, Text, matchFont } from "@shopify/react-native-skia";
+import {
+  Group,
+  Rect,
+  Text,
+  Transforms3d,
+  matchFont,
+} from "@shopify/react-native-skia";
 import React from "react";
 import { SharedValue, useDerivedValue } from "react-native-reanimated";
 import { COLORS } from "../constants/colors";
@@ -8,6 +14,7 @@ import {
   SIDEBAR_WIDTH,
   VIRTUAL_GRID_WIDTH,
 } from "../constants/grid";
+import { UI } from "../constants/ui";
 
 const headerFont = matchFont({
   fontFamily: "sans-serif",
@@ -18,7 +25,7 @@ const headerFont = matchFont({
 interface GridHeaderProps {
   hoursArray: number[];
   scale: SharedValue<number>;
-  headerTransform: SharedValue<any>;
+  headerTransform: SharedValue<Transforms3d>;
 }
 
 const HourText = ({
@@ -30,7 +37,7 @@ const HourText = ({
   index: number;
   scale: SharedValue<number>;
 }) => {
-  const xPosition = SIDEBAR_WIDTH + index * HOUR_WIDTH + 15;
+  const xPosition = SIDEBAR_WIDTH + index * HOUR_WIDTH + UI.resizeHandleWidth;
   const transform = useDerivedValue(() => [
     { translateX: xPosition },
     { scaleX: 1 / scale.value },
@@ -41,7 +48,7 @@ const HourText = ({
     <Group transform={transform}>
       <Text
         x={xPosition}
-        y={HEADER_HEIGHT / 2 + 6}
+        y={HEADER_HEIGHT / 2 + UI.verticalPadding}
         text={`${hour}:00`}
         font={headerFont}
         color={COLORS.textMuted}

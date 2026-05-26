@@ -3,15 +3,14 @@ import React from "react";
 import { SharedValue } from "react-native-reanimated";
 import { COLORS } from "../constants/colors";
 import { ROW_HEIGHT } from "../constants/grid";
+import { UI } from "../constants/ui";
 
 interface ResizingOverlayProps {
-  // Принимаем данные макета (координаты и имя), если ресайз активен
   layoutData: {
     x: number;
     y: number;
     customerName: string;
   } | null;
-  // SharedValue для плавной реактивной ширины на UI-потоке
   resizingWidth: SharedValue<number>;
   font: SkFont | null;
 }
@@ -21,7 +20,6 @@ export const ResizingOverlay: React.FC<ResizingOverlayProps> = ({
   resizingWidth,
   font,
 }) => {
-  // Инкапсулируем условие отрисовки внутри компонента
   if (!layoutData) return null;
 
   return (
@@ -29,7 +27,7 @@ export const ResizingOverlay: React.FC<ResizingOverlayProps> = ({
       <RoundedRect
         x={layoutData.x}
         y={layoutData.y}
-        r={8}
+        r={UI.borderRadius}
         width={resizingWidth}
         height={ROW_HEIGHT - 12}
         color={COLORS.booking}
@@ -37,7 +35,7 @@ export const ResizingOverlay: React.FC<ResizingOverlayProps> = ({
       />
       <Text
         x={layoutData.x + 10}
-        y={layoutData.y + (ROW_HEIGHT - 12) / 2 + 4}
+        y={layoutData.y + (ROW_HEIGHT - 12) / 2 + UI.horizontalPadding}
         text={layoutData.customerName}
         font={font}
         color={COLORS.textMain}

@@ -2,6 +2,7 @@ import { drawBookingBlock } from "@/src/canvas/drawBookingBlock";
 import { DraggingOverlay } from "@/src/components/DraggingOverlay";
 import { ResizingOverlay } from "@/src/components/ResizingOverlay";
 import { COLORS } from "@/src/constants/colors";
+import { UI } from "@/src/constants/ui";
 import { validateBookingSlot } from "@/src/utils/bookingValidation";
 import {
   getRowIndexFromY,
@@ -97,7 +98,7 @@ export default function MainScreen() {
 
     return {
       x: getXFromTime(seg.startTime, baseDayStartMs),
-      y: getYFromRowIndex(seg.resourceIndex) + 6,
+      y: getYFromRowIndex(seg.resourceIndex) + UI.verticalPadding,
       customerName: bookings[seg.bookingId]?.customerName || "",
     };
   }, [resizingId, segmentsArray, baseDayStartMs, bookings]);

@@ -15,6 +15,7 @@ import {
   VIRTUAL_GRID_HEIGHT,
   VIRTUAL_GRID_WIDTH,
 } from "../constants/grid";
+import { UI } from "../constants/ui";
 import { GridHeader } from "./GridHeader";
 import { GridSidebar } from "./GridSidebar";
 import { TimeIndicator } from "./TimeIndicator";
@@ -119,7 +120,7 @@ export const Grid = ({ scrollX, scrollY, scale, topInset }: GridProps) => {
         />
         <Text
           x={20}
-          y={HEADER_HEIGHT / 2 + 6}
+          y={HEADER_HEIGHT / 2 + UI.verticalPadding}
           text="Залы"
           font={cornerHeaderFont}
           color={COLORS.textMain}

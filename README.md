@@ -1,50 +1,166 @@
-# Welcome to your Expo app 👋
+# Interactive Booking Scheduler
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+🇷🇺 Русский [Russian](README.ru.md) | 🇬🇧 English
 
-## Get started
+A high-performance booking scheduler built with React Native, Skia, Reanimated and Gesture Handler.
 
-1. Install dependencies
+The project demonstrates techniques commonly used in calendar, reservation and resource-planning systems, including canvas rendering, gesture orchestration, coordinate transformations and scheduling constraints.
 
-   ```bash
-   npm install
-   ```
+---
 
-2. Start the app
+## Features
 
-   ```bash
-   npx expo start
-   ```
+### Rendering
 
-In the output, you'll find options to open the app in a
+- GPU-accelerated rendering using React Native Skia
+- Virtualized coordinate system
+- Sticky header and resource sidebar
+- Real-time current time indicator
+- Zoomable timeline
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Interactions
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- Pan navigation
+- Pinch-to-zoom
+- Drag & Drop booking repositioning
+- Booking resize handles
+- Tap-to-create booking
+- Gesture conflict resolution
 
-## Get a fresh project
+### Scheduling Logic
 
-When you're ready, run:
+- Collision detection
+- Minimum booking duration enforcement
+- Minimum gap enforcement
+- End-of-day constraints
+- Resource-based booking placement
 
-```bash
-npm run reset-project
+### Architecture
+
+- React Native
+- TypeScript
+- React Native Skia
+- React Native Reanimated
+- React Native Gesture Handler
+- Zustand
+
+---
+
+## Architecture Overview
+
+```text
+User Input
+    │
+    ▼
+Gesture Engine
+    │
+    ▼
+Coordinate System
+(Screen → Canvas → Domain)
+    │
+    ▼
+Scheduling Rules
+    │
+    ▼
+State Management
+    │
+    ▼
+Canvas Rendering
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## Coordinate Spaces
 
-To learn more about developing your project with Expo, look at the following resources:
+The application operates using three coordinate systems:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Screen Coordinates
 
-## Join the community
+Raw touch input from the device.
 
-Join our community of developers creating universal apps.
+### Canvas Coordinates
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Coordinates adjusted for:
+
+- scrolling
+- zoom level
+- sticky regions
+
+### Domain Coordinates
+
+Business-level coordinates:
+
+- resource
+- time
+
+This separation allows interaction logic to remain independent from rendering transformations.
+
+---
+
+## Gesture System
+
+Interactions are orchestrated through a dedicated Gesture Engine.
+
+```text
+Gesture Engine
+├── Pan
+├── Pinch
+├── Drag Booking
+├── Resize Booking
+└── Tap Cell
+```
+
+Gesture conflicts are resolved using exclusive and simultaneous gesture composition.
+
+---
+
+## Performance Considerations
+
+### Current
+
+- Canvas rendering through Skia
+- Worklet-based gesture processing
+- SharedValue-driven viewport updates
+
+### Future Optimizations
+
+- Viewport-aware grid virtualization
+- Spatial indexing for hit-testing
+- Row-based booking indexing
+- Collaborative scheduling
+
+---
+
+## Testing Strategy
+
+Critical business logic is isolated from rendering and can be unit tested independently.
+
+Examples:
+
+- Coordinate transformations
+- Collision detection
+- Time calculations
+- Booking validation
+
+---
+
+## Future Roadmap
+
+- Undo / Redo
+- Recurring bookings
+- Offline-first synchronization
+- Real-time collaborative editing
+- Resource grouping
+- Multi-day scheduling
+
+---
+
+## Why This Project Exists
+
+Most scheduling systems combine:
+
+- complex rendering
+- gesture-heavy interactions
+- domain-specific business rules
+
+This project explores how those concerns can be separated while maintaining performance and scalability in React Native.
